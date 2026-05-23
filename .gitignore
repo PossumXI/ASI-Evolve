@@ -1,4 +1,5 @@
 **/__pycache__/*
 *.env
 .evolve_runs/
+.arobi-evolve/
 .test_tmp/

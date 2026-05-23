@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "generatedFor": "Arobi Technology Alliance",
+  "mode": "guarded-local-operator",
+  "stateRoot": "D:/ASI-Evolve/.arobi-evolve",
+  "website": {
+    "canonicalRoot": "D:/Websites",
+    "artifactRoot": "D:/Websites/dist",
+    "functionsRoot": "D:/Websites/netlify/functions",
+    "publicUrl": "https://aura-genesis.org",
+    "requiredTitle": "Arobi | Accountable AI products",
+    "requiredBundleMarker": "index-arobi-recovery-20260523-dashboard-20260523T1855Z.js",
+    "requiredProductionDeployId": "6a121621945106d63561153d",
+    "forbiddenDeployRoots": [
+      "D:/Websites/aura-genesis.org",
+      "D:/",
+      "D:/cheeks/Asgard",
+      "D:/openjaws/OpenJaws",
+      "C:/Users/Knight/Desktop/Immaculate"
+    ]
+  },
+  "services": [
+    {
+      "id": "aura-root",
+      "label": "Aura Genesis LaaS shell",
+      "url": "https://aura-genesis.org/",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "aura-fabric",
+      "label": "Aura public fabric status",
+      "url": "https://aura-genesis.org/api/fabric/public-status",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "arobi-public-info",
+      "label": "Arobi public node info",
+      "url": "https://arobi.aura-genesis.org/api/v1/info",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "arobi-public-fabric",
+      "label": "Arobi public fabric verification",
+      "url": "https://arobi.aura-genesis.org/api/fabric/public-status",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "superbrain-health",
+      "label": "Superbrain public health",
+      "url": "https://superbrain.aura-genesis.org/api/health",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "immaculate-local-harness",
+      "label": "Immaculate local harness",
+      "url": "http://127.0.0.1:8787/api/health",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "q-gateway-local",
+      "label": "Q local gateway",
+      "url": "http://127.0.0.1:8897/health",
+      "expectedStatuses": [200],
+      "optional": true
+    },
+    {
+      "id": "discord-bridge",
+      "label": "Discord bridge",
+      "url": "https://discord.aura-genesis.org/status",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "linkedin-bridge",
+      "label": "LinkedIn bridge",
+      "url": "https://linkedin.aura-genesis.org/healthz",
+      "expectedStatuses": [200]
+    }
+  ],
+  "localRoots": {
+    "asiEvolve": "D:/ASI-Evolve",
+    "website": "D:/Websites",
+    "immaculate": "C:/Users/Knight/Desktop/Immaculate",
+    "openjaws": "D:/openjaws/OpenJaws",
+    "arobi": "C:/Users/Knight/.arobi",
+    "arobiPublic": "C:/Users/Knight/.arobi-public",
+    "arobiRailway": "C:/Users/Knight/.arobi-railway",
+    "cloudflared": "C:/Users/Knight/.cloudflared"
+  },
+  "commands": {
+    "website": [
+      {
+        "id": "operator-handoff",
+        "cwd": "D:/Websites",
+        "argv": ["npm", "run", "operator:handoff:check"],
+        "timeoutSec": 120
+      },
+      {
+        "id": "production-smokes",
+        "cwd": "D:/Websites",
+        "argv": ["npm", "run", "test:production-smokes"],
+        "timeoutSec": 240
+      }
+    ],
+    "immaculate": [
+      {
+        "id": "operator-readiness",
+        "cwd": "C:/Users/Knight/Desktop/Immaculate",
+        "argv": ["npm", "run", "operator:readiness"],
+        "timeoutSec": 240
+      },
+      {
+        "id": "live-operator-activity",
+        "cwd": "C:/Users/Knight/Desktop/Immaculate",
+        "argv": ["npm", "run", "live:operator:activity"],
+        "timeoutSec": 180
+      }
+    ],
+    "openjaws": [
+      {
+        "id": "serious-approval",
+        "cwd": "D:/openjaws/OpenJaws",
+        "argv": ["bun", "run", "serious:approval:ready"],
+        "timeoutSec": 180
+      },
+      {
+        "id": "guardrails",
+        "cwd": "D:/openjaws/OpenJaws",
+        "argv": ["bun", "run", "orchestration:guardrails"],
+        "timeoutSec": 180
+      },
+      {
+        "id": "roundtable-status",
+        "cwd": "D:/openjaws/OpenJaws",
+        "argv": ["bun", "run", "roundtable:runtime"],
+        "timeoutSec": 180
+      }
+    ]
+  },
+  "governance": {
+    "branchPrefix": "agent/evolve/",
+    "blockedActionCategories": [
+      "public_deploy",
+      "billing_or_payment",
+      "database_or_schema",
+      "external_communication",
+      "calendar_mutation",
+      "discord_role_change",
+      "infrastructure_mutation",
+      "credential_or_secret",
+      "agent_creation_or_invite",
+      "regulated_safety_case"
+    ],
+    "approvalRequiredFor": [
+      "production deploy",
+      "billing mutation",
+      "database migration",
+      "secret or credential change",
+      "external email, post, dm, comment, or calendar send",
+      "Discord role or invite action",
+      "infrastructure mutation",
+      "defense, safety-critical, or regulated operational case"
+    ],
+    "defaultLane": "private",
+    "publicDataPolicy": "public surfaces only; private, sealed, raw customer, and secret material is excluded"
+  }
+}

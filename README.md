@@ -10,6 +10,20 @@ A financial analyst, a biomedical engineer, a climate scientist, or a game devel
 
 **Quick try:** Install the Evolve Agent Skill under `skills/evolve` to have a lightweight first pass.
 
+## Arobi Fork Integration
+
+This fork is also wired for Arobi's guarded operator stack. The local bridge lives in `arobi_integrations/` and connects ASI-Evolve to the protected LaaS/Arobi website shell, Immaculate, Q, JAWS/OpenJaws, and Discord-agent lanes through health snapshots and approval-gated dispatch packets.
+
+Start with:
+
+```powershell
+cd D:\ASI-Evolve
+python -m arobi_integrations status --write-snapshot
+python -m arobi_integrations seed-arobi --process
+```
+
+The bridge does not deploy production, send external messages, mutate billing, mutate databases, or expose secrets. Serious tasks are held until exact founder and policy-governor approval is attached. See `docs/arobi-integration-operator-guide.md`.
+
 <div align="center">
 
 [![Paper](https://img.shields.io/badge/Paper-ASI--Evolve-blue?style=flat&logo=googledocs&logoColor=white)](https://github.com/GAIR-NLP/ASI-Evolve/blob/main/assets/paper.pdf)
