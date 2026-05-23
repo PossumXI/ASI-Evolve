@@ -25,7 +25,7 @@ Register-ScheduledTask `
   -Trigger @($Trigger, $RepeatTrigger) `
   -Principal $Principal `
   -Settings $Settings `
-  -Description "Guarded ASI-Evolve bridge for Arobi route health and approval-gated task dispatch." `
+  -Description "Guarded ASI-Evolve autopilot for Arobi route health, analytics, safe local recovery, founder notifications, and approval-gated task dispatch." `
   -Force | Out-Null
 
 Get-ScheduledTask -TaskName $TaskName | Select-Object TaskName, State

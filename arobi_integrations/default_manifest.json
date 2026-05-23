@@ -3,6 +3,9 @@
   "generatedFor": "Arobi Technology Alliance",
   "mode": "guarded-local-operator",
   "stateRoot": "D:/ASI-Evolve/.arobi-evolve",
+  "secretEnvScripts": [
+    "D:/openjaws/OpenJaws/local-command-station/discord-q-agent.env.ps1"
+  ],
   "website": {
     "canonicalRoot": "D:/Websites",
     "artifactRoot": "D:/Websites/dist",
@@ -85,6 +88,80 @@
     "arobiPublic": "C:/Users/Knight/.arobi-public",
     "arobiRailway": "C:/Users/Knight/.arobi-railway",
     "cloudflared": "C:/Users/Knight/.cloudflared"
+  },
+  "automation": {
+    "pollIntervalSeconds": 900,
+    "analyticsWindowDays": 7,
+    "notifyFounderOn": [
+      "new route or service failures",
+      "route or service recoveries",
+      "new active or trialing subscriptions",
+      "new paid/proven AURA token orders",
+      "new authenticated users",
+      "new site telemetry events"
+    ],
+    "autonomousActionsAllowed": [
+      "read-only production health checks",
+      "read-only Supabase aggregate analytics",
+      "read-only Stripe direct checks when the key is valid",
+      "local safe recovery commands for Q gateway and approved local services",
+      "Discord founder notifications without secrets or customer PII",
+      "dispatch packets to Q, Immaculate, JAWS/OpenJaws, Discord, and LaaS outboxes"
+    ],
+    "approvalStillRequired": [
+      "production deploys",
+      "external outreach email, post, DM, comment, or calendar send",
+      "billing mutation, refund, discount creation, or subscription change",
+      "database schema migration or RLS policy mutation",
+      "credential, role, invite, firewall, Cloudflare, OCI, or Railway mutation"
+    ]
+  },
+  "recoveryCommands": {
+    "superbrain-health": [
+      {
+        "id": "start-immaculate-harness-supervisor",
+        "cwd": "D:/openjaws/OpenJaws/local-command-station",
+        "argv": [
+          "powershell",
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','D:\\openjaws\\OpenJaws\\local-command-station\\start-immaculate-harness.ps1') -WorkingDirectory 'D:\\openjaws\\OpenJaws\\local-command-station' -WindowStyle Hidden"
+        ],
+        "timeoutSec": 30
+      }
+    ],
+    "immaculate-local-harness": [
+      {
+        "id": "start-immaculate-harness-supervisor",
+        "cwd": "D:/openjaws/OpenJaws/local-command-station",
+        "argv": [
+          "powershell",
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','D:\\openjaws\\OpenJaws\\local-command-station\\start-immaculate-harness.ps1') -WorkingDirectory 'D:\\openjaws\\OpenJaws\\local-command-station' -WindowStyle Hidden"
+        ],
+        "timeoutSec": 30
+      }
+    ],
+    "q-gateway-local": [
+      {
+        "id": "start-q-gateway-hidden",
+        "cwd": "C:/Users/Knight/Desktop/Immaculate",
+        "argv": [
+          "powershell",
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "Start-Process -FilePath npm.cmd -ArgumentList @('run','q:gateway') -WorkingDirectory 'C:\\Users\\Knight\\Desktop\\Immaculate' -WindowStyle Hidden"
+        ],
+        "timeoutSec": 30
+      }
+    ]
   },
   "commands": {
     "website": [

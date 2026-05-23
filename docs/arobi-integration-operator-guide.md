@@ -24,6 +24,8 @@ This fork is wired as a guarded research and improvement lane for Arobi systems.
 ```powershell
 cd D:\ASI-Evolve
 python -m arobi_integrations status --write-snapshot
+python -m arobi_integrations analytics --write-report
+python -m arobi_integrations autopilot --write-report --notify --heal
 python -m arobi_integrations doctor
 python -m arobi_integrations seed-arobi --process
 python -m arobi_integrations process
@@ -43,6 +45,9 @@ The bridge writes local state under `D:\ASI-Evolve\.arobi-evolve`:
 
 - `status/latest.json`: latest route and artifact health.
 - `status/doctor-latest.json`: latest local command readiness or execution report.
+- `status/analytics-latest.json`: latest private analytics summary.
+- `status/autopilot-latest.json`: latest autonomous monitor, delta, recovery, and notification receipt.
+- `reports/operator-analytics-latest.md`: private website/user/revenue/API telemetry report.
 - `tasks/inbox`: new proposed evolution tasks.
 - `tasks/pending-approval`: validated tasks that require exact approval.
 - `tasks/ready`: validated tasks that can run on an agent-only branch.
@@ -63,7 +68,7 @@ Each task has an explicit evaluator command and timeout. Tasks with production, 
 
 Initial verification on May 23, 2026:
 
-- `python -m unittest discover -s tests -v`: 6 tests passed.
+- `python -m unittest discover -s tests -v`: 10 tests passed.
 - `python -m arobi_integrations status --write-snapshot`: route and artifact status passed with zero required failures.
 - `python -m arobi_integrations doctor --group website --execute`: `operator:handoff:check` and `test:production-smokes` passed through the bridge.
 - `python -m arobi_integrations doctor --group openjaws --execute`: serious-action approval, orchestration guardrails, and OpenJaws roundtable status passed.
@@ -74,7 +79,7 @@ Initial verification on May 23, 2026:
 
 ## 24/7 Mode
 
-Use the scheduled task wrapper in `scripts/start-arobi-evolve-bridge.ps1` for local-only unattended checks. The scheduled loop only writes health snapshots and validates queued tasks. It does not run ASI-Evolve rounds or execute serious actions.
+Use the scheduled task wrapper in `scripts/start-arobi-evolve-bridge.ps1` for local-only unattended checks. The scheduled loop runs the guarded autopilot, writes private analytics reports, attempts only configured safe local recovery commands, notifies the founder on material deltas, and validates queued tasks. It does not run production deploys, send external outreach, mutate billing, mutate databases, change roles, or execute serious infrastructure changes without approvals.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\ASI-Evolve\scripts\start-arobi-evolve-bridge.ps1 -Once
@@ -84,4 +89,26 @@ Install a Windows Scheduled Task only after confirming this command works locall
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\ASI-Evolve\scripts\install-arobi-evolve-bridge-task.ps1
+```
+
+## Autonomy Policy
+
+Allowed without interactive approval:
+
+- Read-only checks against `https://aura-genesis.org`, `https://arobi.aura-genesis.org`, Superbrain, Q gateway, Immaculate harness, Discord bridge, and LinkedIn bridge.
+- Read-only Supabase aggregate analytics for auth counts, newsletter/contact counts, token order status, API-key usage counts, tenant decision volume, and site telemetry.
+- Conversion/drop-off reporting for sessions to confirmed users, users to active subscriptions, sessions to paid token orders, newsletter leads to users, and API-key activation.
+- Read-only Stripe checks when the local/Netlify key is accepted. If Stripe returns `401`, Supabase webhook-confirmed records remain the revenue source of truth.
+- Local safe recovery commands listed in `arobi_integrations/default_manifest.json`, currently the Q gateway restart path.
+- Founder-only Discord notifications with counts and report paths. The notifier reads only named Discord values from `D:\openjaws\OpenJaws\local-command-station\discord-q-agent.env.ps1` at runtime; no secret values are copied into this repo or written to reports.
+- Safe local recovery currently covers Q gateway restart and the OpenJaws-supervised Immaculate harness launcher. The harness recovery also clears the related Superbrain public 502 path because that public route depends on the local harness being healthy.
+
+Still approval-gated:
+
+- Production deploys, Stripe mutations, refunds, discount creation, subscription changes, database migrations, RLS changes, external outreach, LinkedIn posts/comments, calendar sends, Discord role/invite changes, Cloudflare/OCI/Railway mutations, credential changes, and regulated/defense operational actions.
+
+The live deep analytics report is private local state, not a public GitHub artifact:
+
+```powershell
+Get-Content D:\ASI-Evolve\.arobi-evolve\reports\operator-analytics-latest.md
 ```

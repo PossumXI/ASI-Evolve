@@ -10,7 +10,7 @@ $Python = "python"
 function Invoke-ArobiEvolvePass {
   Push-Location $Root
   try {
-    & $Python -m arobi_integrations status --write-snapshot | Out-Null
+    & $Python -m arobi_integrations autopilot --write-report --notify --heal | Out-Null
     & $Python -m arobi_integrations process | Out-Null
   } finally {
     Pop-Location

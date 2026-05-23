@@ -4,12 +4,16 @@ import unittest
 from pathlib import Path
 
 from arobi_integrations.bridge import (
+    aggregate_telemetry_rows,
     action_needs_approval,
     bridge_paths,
     check_website_artifact,
     create_task,
     load_manifest,
     process_tasks,
+    render_analytics_markdown,
+    summarize_analytics_delta,
+    summarize_status_delta,
     validate_task,
 )
 
@@ -111,6 +115,113 @@ class ArobiIntegrationBridgeTests(unittest.TestCase):
     def test_default_manifest_loads(self):
         manifest = load_manifest(None)
         self.assertEqual(manifest["website"]["canonicalRoot"], "D:/Websites")
+
+    def test_status_delta_detects_failures_and_recoveries(self):
+        previous = {
+            "services": [
+                {"id": "aura-root", "status": "ok"},
+                {"id": "q-gateway-local", "status": "failed"},
+            ]
+        }
+        current = {
+            "services": [
+                {"id": "aura-root", "label": "Aura", "status": "failed"},
+                {"id": "q-gateway-local", "label": "Q", "status": "ok"},
+            ]
+        }
+        delta = summarize_status_delta(previous, current)
+        self.assertEqual(delta["newFailures"], [{"id": "aura-root", "label": "Aura", "status": "failed"}])
+        self.assertEqual(delta["recoveries"], [{"id": "q-gateway-local", "label": "Q", "status": "ok"}])
+
+    def test_telemetry_aggregation_keeps_clicks_locations_and_dropoff(self):
+        rows = [
+            {
+                "occurred_at": "2026-05-23T00:00:00Z",
+                "event_type": "page_view",
+                "session_id": "s1",
+                "path": "/",
+                "country": "US",
+                "referrer": "https://google.com",
+            },
+            {
+                "occurred_at": "2026-05-23T00:01:00Z",
+                "event_type": "cta_click",
+                "session_id": "s1",
+                "path": "/pricing",
+                "target_label": "Start Supporter",
+                "country": "US",
+            },
+            {
+                "occurred_at": "2026-05-23T00:02:00Z",
+                "event_type": "page_view",
+                "session_id": "s2",
+                "path": "/autonomo",
+                "country": "CA",
+            },
+        ]
+        telemetry = aggregate_telemetry_rows(rows)
+        self.assertEqual(telemetry["totalEvents"], 3)
+        self.assertEqual(telemetry["anonymousSessions"], 2)
+        self.assertEqual(telemetry["topPaths"][0], {"key": "/", "count": 1})
+        self.assertEqual(telemetry["topTargets"][0], {"key": "Start Supporter", "count": 1})
+        self.assertEqual(telemetry["funnel"]["pricingIntentClicks"], 1)
+
+    def test_analytics_delta_flags_new_users_and_paid_activity_without_pii(self):
+        previous = {
+            "business": {
+                "users": {"total": 4},
+                "tokenOrders": {"paidOrderCount": 1, "paidUsd": 25.0},
+                "subscriptions": {"activeOrTrialing": 0},
+            }
+        }
+        current = {
+            "business": {
+                "users": {"total": 6},
+                "tokenOrders": {"paidOrderCount": 2, "paidUsd": 75.0},
+                "subscriptions": {"activeOrTrialing": 1},
+            }
+        }
+        delta = summarize_analytics_delta(previous, current)
+        self.assertEqual(delta["newUsers"], 2)
+        self.assertEqual(delta["newPaidTokenOrders"], 1)
+        self.assertEqual(delta["newPaidTokenUsd"], 50.0)
+        self.assertEqual(delta["newActiveSubscriptions"], 1)
+
+    def test_analytics_markdown_includes_conversion_and_dropoff(self):
+        report = {
+            "generatedAt": "2026-05-23T00:00:00Z",
+            "sinceDays": 7,
+            "business": {
+                "users": {"total": 3, "confirmed": 3, "newLast24h": 0},
+                "subscriptions": {"activeOrTrialing": 0},
+                "tokenOrders": {"totalOrders": 6, "paidOrderCount": 4, "paidUsd": 20.0, "paidOrdersMissingStripeProof": 4},
+                "newsletter": {"total": 21, "active": 21},
+                "contacts": {"total": 4},
+                "apiKeys": {"total": 4, "active": 4, "usedAtLeastOnce": 1},
+                "tenantDecisions": {"total": 0},
+            },
+            "telemetry": {
+                "totalEvents": 655,
+                "anonymousSessions": 332,
+                "topPaths": [{"key": "/", "count": 212}],
+                "topTargets": [{"key": "Sign in", "count": 20}],
+                "topReferrers": [{"key": "(none)", "count": 624}],
+                "byCountry": [{"key": "US", "count": 629}],
+                "funnel": {
+                    "pageViews": 522,
+                    "pricingIntentClicks": 22,
+                    "autonomoViews": 10,
+                    "apexViews": 80,
+                    "dashboardViews": 72,
+                },
+            },
+            "stripe": {"status": "skipped", "reason": "test"},
+            "warnings": [],
+        }
+        markdown = render_analytics_markdown(report)
+        self.assertIn("## Conversion And Drop-Off", markdown)
+        self.assertIn("Confirmed users to active/trialing subscriptions: 0/3 (0.0%).", markdown)
+        self.assertIn("Active API keys used at least once: 1/4 (25.0%).", markdown)
 
 
 if __name__ == "__main__":

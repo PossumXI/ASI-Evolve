@@ -19,10 +19,12 @@ Start with:
 ```powershell
 cd D:\ASI-Evolve
 python -m arobi_integrations status --write-snapshot
+python -m arobi_integrations analytics --write-report
+python -m arobi_integrations autopilot --write-report --notify --heal
 python -m arobi_integrations seed-arobi --process
 ```
 
-The bridge does not deploy production, send external messages, mutate billing, mutate databases, or expose secrets. Serious tasks are held until exact founder and policy-governor approval is attached. See `docs/arobi-integration-operator-guide.md`.
+The autopilot runs read-only route checks, private aggregate website analytics, safe local recovery for configured local services, founder-only Discord notifications, and approval-gated task dispatch. It does not deploy production, send external outreach, mutate billing, mutate databases, change infrastructure, or expose secrets. Serious tasks are held until exact founder and policy-governor approval is attached. See `docs/arobi-integration-operator-guide.md`.
 
 <div align="center">
 
