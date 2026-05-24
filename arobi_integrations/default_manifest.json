@@ -13,7 +13,7 @@
     "publicUrl": "https://aura-genesis.org",
     "requiredTitle": "Arobi | Accountable AI products",
     "requiredBundleMarker": "index-arobi-recovery-20260523-dashboard-20260523T1855Z.js",
-    "requiredProductionDeployId": "6a121621945106d63561153d",
+    "requiredProductionDeployId": "6a1246aef1dc5046ef96c074",
     "forbiddenDeployRoots": [
       "D:/Websites/aura-genesis.org",
       "D:/",
@@ -33,6 +33,12 @@
       "id": "aura-fabric",
       "label": "Aura public fabric status",
       "url": "https://aura-genesis.org/api/fabric/public-status",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "aura-superbrain-bridge",
+      "label": "Aura same-origin Superbrain bridge",
+      "url": "https://aura-genesis.org/api/superbrain/status",
       "expectedStatuses": [200]
     },
     {
