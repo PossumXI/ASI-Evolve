@@ -4,7 +4,7 @@ This fork is wired as a guarded research and improvement lane for Arobi systems.
 
 ## Canonical Connections
 
-- LaaS/Arobi website shell: `D:\Websites`, artifact `D:\Websites\dist`, public URL `https://aura-genesis.org`.
+- LaaS/Arobi website shell: `D:\Websites`, artifact `D:\Websites\dist`, public URL `https://aura-genesis.org`, live guarded deploy `6a137155e91c21e1dcf7a0dd`.
 - Arobi public node: `https://arobi.aura-genesis.org`.
 - Superbrain/Immaculate public lane: `https://superbrain.aura-genesis.org/api/health`.
 - Immaculate local harness: `C:\Users\Knight\Desktop\Immaculate`, local health `http://127.0.0.1:8787/api/health`.
@@ -17,7 +17,7 @@ This fork is wired as a guarded research and improvement lane for Arobi systems.
 - ASI-Evolve may create tasks, health snapshots, evaluator specs, and dispatch packets.
 - ASI-Evolve must not deploy production, send external messages, mutate Stripe, mutate databases, change infrastructure, change Discord roles, expose secrets, or create agents without exact founder and policy-governor approval.
 - Work is routed to `agent/evolve/*` branches or local candidate workspaces only.
-- `aura-genesis.org` stays protected by the `D:\Websites` deploy guard. This fork never deploys the retired static Aura archive.
+- `aura-genesis.org` stays protected by the `D:\Websites` deploy guard. The correct LaaS/Arobi shell remains the live guarded target. This fork never deploys the retired static Aura archive.
 
 ## Daily Commands
 
@@ -35,6 +35,7 @@ Autopilot recovery behavior:
 
 - Recovery targets any current failed service that has a configured recovery command, not only failures that are new compared with the previous run.
 - Recovery runs before the slower analytics pass so Immaculate/Superbrain repair is not blocked by Supabase, Stripe, or telemetry reads.
+- Route health probes run concurrently, so a higher per-route timeout does not turn one slow public endpoint into a full sequential monitor stall.
 - When a recovery command starts a background supervisor, autopilot verifies the affected health routes before writing the final status snapshot.
 - Default post-heal verification wait is `150` seconds. For a faster manual pass, use `--post-heal-wait 30`.
 
@@ -58,6 +59,8 @@ The bridge writes local state under `D:\ASI-Evolve\.arobi-evolve`:
 - `status/doctor-latest.json`: latest local command readiness or execution report.
 - `status/analytics-latest.json`: latest private analytics summary.
 - `status/autopilot-latest.json`: latest autonomous monitor, delta, recovery, and notification receipt.
+- `status/bridge-heartbeat.json`: latest scheduled wrapper heartbeat with exit codes and log path.
+- `logs/bridge-run-*.log`: retained scheduled wrapper logs for the most recent local passes.
 - `reports/operator-analytics-latest.md`: private website/user/revenue/API telemetry report.
 - `tasks/inbox`: new proposed evolution tasks.
 - `tasks/pending-approval`: validated tasks that require exact approval.
@@ -92,8 +95,16 @@ Initial verification on May 23, 2026:
 
 Use the scheduled task wrapper in `scripts/start-arobi-evolve-bridge.ps1` for local-only unattended checks. The scheduled loop runs the guarded autopilot, writes private analytics reports, attempts only configured safe local recovery commands, notifies the founder on material deltas, and validates queued tasks. It does not run production deploys, send external outreach, mutate billing, mutate databases, change roles, or execute serious infrastructure changes without approvals.
 
+The wrapper uses a machine-wide mutex so overlapping runs are skipped cleanly, writes a heartbeat file to `D:\ASI-Evolve\.arobi-evolve\status\bridge-heartbeat.json`, and keeps bounded logs in `D:\ASI-Evolve\.arobi-evolve\logs`. Scheduled runs use a `25` second route timeout and a `180` second post-heal verification window so heavier fabric/Superbrain routes are not marked down by short probes. The wrapper also hard-stops a hung autopilot child after `540` seconds and a hung task-processing child after `120` seconds so one bad pass cannot block the next scheduled run.
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\ASI-Evolve\scripts\start-arobi-evolve-bridge.ps1 -Once
+```
+
+Manual no-notification verification:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\ASI-Evolve\scripts\start-arobi-evolve-bridge.ps1 -Once -DisableNotify -TimeoutSeconds 25 -PostHealWaitSeconds 30
 ```
 
 Install a Windows Scheduled Task only after confirming this command works locally:
@@ -110,9 +121,9 @@ Allowed without interactive approval:
 - Read-only Supabase aggregate analytics for auth counts, newsletter/contact counts, token order status, API-key usage counts, tenant decision volume, and site telemetry.
 - Conversion/drop-off reporting for sessions to confirmed users, users to active subscriptions, sessions to paid token orders, newsletter leads to users, and API-key activation.
 - Read-only Stripe checks when the local/Netlify key is accepted. If Stripe returns `401`, Supabase webhook-confirmed records remain the revenue source of truth.
-- Local safe recovery commands listed in `arobi_integrations/default_manifest.json`, currently the Q gateway restart path.
+- Local safe recovery commands listed in `arobi_integrations/default_manifest.json`, currently the Q gateway restart path, OpenJaws-supervised Immaculate/Superbrain harness launcher, and bounded direct Discord Q bridge launcher.
 - Founder-only Discord notifications with counts and report paths. The notifier reads only named Discord values from `D:\openjaws\OpenJaws\local-command-station\discord-q-agent.env.ps1` at runtime; no secret values are copied into this repo or written to reports.
-- Safe local recovery currently covers Q gateway restart and the OpenJaws-supervised Immaculate harness launcher. The harness recovery also clears the related Superbrain public 502 path because that public route depends on the local harness being healthy.
+- Safe local recovery currently covers Q gateway restart, the OpenJaws-supervised Immaculate harness launcher, and `start-discord-q-direct.ps1` for the Discord Q bridge. The direct Discord launcher clears only an unhealthy `127.0.0.1:8788` listener, starts Q with captured stdout/stderr logs, and exits only after the gateway-backed health route is ready. The harness recovery also clears the related Superbrain public 502 path because that public route depends on the local harness being healthy.
 
 Still approval-gated:
 

@@ -3,6 +3,7 @@
   "generatedFor": "Arobi Technology Alliance",
   "mode": "guarded-local-operator",
   "stateRoot": "D:/ASI-Evolve/.arobi-evolve",
+  "statusProbeWorkers": 6,
   "secretEnvScripts": [
     "D:/openjaws/OpenJaws/local-command-station/discord-q-agent.env.ps1"
   ],
@@ -13,7 +14,7 @@
     "publicUrl": "https://aura-genesis.org",
     "requiredTitle": "Arobi | Accountable AI products",
     "requiredBundleMarker": "index-arobi-recovery-20260523-dashboard-20260523T1855Z.js",
-    "requiredProductionDeployId": "6a1246aef1dc5046ef96c074",
+    "requiredProductionDeployId": "6a137155e91c21e1dcf7a0dd",
     "forbiddenDeployRoots": [
       "D:/Websites/aura-genesis.org",
       "D:/",
@@ -39,6 +40,7 @@
       "id": "aura-superbrain-bridge",
       "label": "Aura same-origin Superbrain bridge",
       "url": "https://aura-genesis.org/api/superbrain/status",
+      "probeGroup": "superbrain-harness",
       "expectedStatuses": [200]
     },
     {
@@ -57,12 +59,14 @@
       "id": "superbrain-health",
       "label": "Superbrain public health",
       "url": "https://superbrain.aura-genesis.org/api/health",
+      "probeGroup": "superbrain-harness",
       "expectedStatuses": [200]
     },
     {
       "id": "immaculate-local-harness",
       "label": "Immaculate local harness",
       "url": "http://127.0.0.1:8787/api/health",
+      "probeGroup": "superbrain-harness",
       "expectedStatuses": [200]
     },
     {
@@ -166,6 +170,27 @@
           "Start-Process -FilePath npm.cmd -ArgumentList @('run','q:gateway') -WorkingDirectory 'C:\\Users\\Knight\\Desktop\\Immaculate' -WindowStyle Hidden"
         ],
         "timeoutSec": 30
+      }
+    ],
+    "discord-bridge": [
+      {
+        "id": "start-discord-q-direct",
+        "cwd": "D:/openjaws/OpenJaws/local-command-station",
+        "argv": [
+          "powershell",
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "D:\\openjaws\\OpenJaws\\local-command-station\\start-discord-q-direct.ps1",
+          "-EnvFile",
+          "D:\\openjaws\\OpenJaws\\local-command-station\\discord-q-agent.env.ps1",
+          "-AgentLabel",
+          "Q",
+          "-StartupTimeoutSeconds",
+          "150"
+        ],
+        "timeoutSec": 180
       }
     ]
   },

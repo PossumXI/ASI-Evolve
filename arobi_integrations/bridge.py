@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -540,12 +541,40 @@ def check_website_artifact(manifest: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_status(manifest: dict[str, Any], timeout: int) -> dict[str, Any]:
-    service_results = [http_probe(service, timeout) for service in manifest.get("services", [])]
+    services = [service for service in manifest.get("services", []) if isinstance(service, dict)]
+    service_results: list[dict[str, Any] | None] = [None] * len(services)
+    if services:
+        groups: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+        for index, service in enumerate(services):
+            group = str(service.get("probeGroup") or f"service:{index}")
+            groups.setdefault(group, []).append((index, service))
+
+        def probe_group(items: list[tuple[int, dict[str, Any]]]) -> list[tuple[int, dict[str, Any]]]:
+            return [(index, http_probe(service, timeout)) for index, service in items]
+
+        max_workers = max(1, min(int(manifest.get("statusProbeWorkers", 6)), len(groups)))
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="arobi-status") as executor:
+            future_map = {executor.submit(probe_group, items): items for items in groups.values()}
+            for future in as_completed(future_map):
+                try:
+                    for index, result in future.result():
+                        service_results[index] = result
+                except Exception as error:  # noqa: BLE001
+                    for index, service in future_map[future]:
+                        service_results[index] = {
+                            "id": service.get("id", f"service-{index}"),
+                            "label": service.get("label", service.get("id", f"service-{index}")),
+                            "url": service.get("url"),
+                            "status": "failed",
+                            "httpStatus": None,
+                            "elapsedMs": 0,
+                            "error": redacted_error(error),
+                        }
     root_results = check_local_roots(manifest)
     artifact = check_website_artifact(manifest)
     failures = [
         result
-        for result in [*service_results, *root_results, artifact]
+        for result in [*(item for item in service_results if item is not None), *root_results, artifact]
         if result["status"] not in {"ok", "optional_failed"}
     ]
     return {
@@ -556,7 +585,7 @@ def build_status(manifest: dict[str, Any], timeout: int) -> dict[str, Any]:
         "status": "ok" if not failures else "warning",
         "publicDataPolicy": manifest.get("governance", {}).get("publicDataPolicy"),
         "websiteArtifact": artifact,
-        "services": service_results,
+        "services": [item for item in service_results if item is not None],
         "localRoots": root_results,
         "failureCount": len(failures),
     }
