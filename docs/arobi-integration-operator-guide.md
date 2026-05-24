@@ -31,6 +31,17 @@ python -m arobi_integrations seed-arobi --process
 python -m arobi_integrations process
 ```
 
+Autopilot recovery behavior:
+
+- Recovery targets any current failed service that has a configured recovery command, not only failures that are new compared with the previous run.
+- Recovery runs before the slower analytics pass so Immaculate/Superbrain repair is not blocked by Supabase, Stripe, or telemetry reads.
+- When a recovery command starts a background supervisor, autopilot verifies the affected health routes before writing the final status snapshot.
+- Default post-heal verification wait is `150` seconds. For a faster manual pass, use `--post-heal-wait 30`.
+
+```powershell
+python -m arobi_integrations autopilot --write-report --heal --timeout 12 --post-heal-wait 30
+```
+
 Run deeper command checks only when the machine has time:
 
 ```powershell

@@ -1022,6 +1022,33 @@ def read_previous_autopilot(paths: BridgePaths) -> dict[str, Any] | None:
         return None
 
 
+def status_failure_items(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for section in ("services", "localRoots"):
+        for item in snapshot.get(section, []):
+            if not isinstance(item, dict):
+                continue
+            if item.get("status") not in {"ok", "optional_failed"}:
+                failures.append(item)
+
+    artifact = snapshot.get("websiteArtifact")
+    if isinstance(artifact, dict) and artifact.get("status") not in {"ok", None}:
+        failures.append(
+            {
+                "id": "website-artifact",
+                "label": "Website artifact guard",
+                "status": artifact.get("status"),
+                "findings": artifact.get("findings", []),
+            }
+        )
+    return failures
+
+
+def recoverable_failures(manifest: dict[str, Any], failures: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    recovery_commands = manifest.get("recoveryCommands", {})
+    return [failure for failure in failures if failure.get("id") in recovery_commands]
+
+
 def build_operator_notification(
     status_delta: dict[str, Any],
     analytics_delta: dict[str, Any],
@@ -1113,6 +1140,73 @@ def run_recovery_for_failures(manifest: dict[str, Any], failures: list[dict[str,
             result["serviceId"] = service_id
             results.append(result)
     return results
+
+
+def verify_recovery_targets(
+    manifest: dict[str, Any],
+    target_ids: set[str],
+    timeout: int,
+    wait_seconds: int,
+) -> dict[str, Any]:
+    if not target_ids:
+        return {
+            "status": "skipped",
+            "reason": "No recoverable targets were provided.",
+            "targetIds": [],
+            "attempts": [],
+            "remainingFailures": [],
+        }
+
+    services = [service for service in manifest.get("services", []) if service.get("id") in target_ids]
+    attempts: list[dict[str, Any]] = []
+    deadline = time.monotonic() + max(0, wait_seconds)
+    remaining: list[dict[str, Any]] = []
+
+    while True:
+        remaining = []
+        probe_results = []
+        for service in services:
+            result = http_probe(service, timeout)
+            probe_results.append(
+                {
+                    "id": result.get("id"),
+                    "label": result.get("label"),
+                    "status": result.get("status"),
+                    "httpStatus": result.get("httpStatus"),
+                    "elapsedMs": result.get("elapsedMs"),
+                }
+            )
+            if result.get("status") not in {"ok", "optional_failed"}:
+                remaining.append(result)
+
+        attempts.append(
+            {
+                "checkedAt": utc_now(),
+                "probeResults": probe_results,
+                "remainingIds": [str(item.get("id")) for item in remaining],
+            }
+        )
+
+        if not remaining or time.monotonic() >= deadline:
+            break
+        time.sleep(min(5, max(0.1, deadline - time.monotonic())))
+
+    return {
+        "status": "ok" if not remaining else "warning",
+        "targetIds": sorted(target_ids),
+        "waitSeconds": wait_seconds,
+        "attempts": attempts,
+        "remainingFailures": [
+            {
+                "id": item.get("id"),
+                "label": item.get("label"),
+                "status": item.get("status"),
+                "httpStatus": item.get("httpStatus"),
+                "error": item.get("error"),
+            }
+            for item in remaining
+        ],
+    }
 
 
 def resolve_command_argv(argv: list[str]) -> list[str] | None:
@@ -1501,11 +1595,28 @@ def command_analytics(manifest: dict[str, Any], paths: BridgePaths, args: argpar
 def command_autopilot(manifest: dict[str, Any], paths: BridgePaths, args: argparse.Namespace) -> int:
     previous = read_previous_autopilot(paths)
     status_snapshot = build_status(manifest, args.timeout)
+    previous_status = previous.get("statusSnapshot") if isinstance(previous, dict) else None
+    pre_recovery_status_snapshot = status_snapshot
+    pre_recovery_status_delta = summarize_status_delta(previous_status, pre_recovery_status_snapshot)
+    current_failures = status_failure_items(pre_recovery_status_snapshot)
+    recovery_targets = recoverable_failures(manifest, current_failures)
+    recovery = run_recovery_for_failures(manifest, recovery_targets) if args.heal else []
+    recovery_verification = {
+        "status": "skipped",
+        "reason": "--heal not set or no recovery commands matched current failures.",
+        "targetIds": [],
+        "attempts": [],
+        "remainingFailures": [],
+    }
+    if recovery:
+        target_ids = {str(failure.get("id")) for failure in recovery_targets if failure.get("id")}
+        recovery_verification = verify_recovery_targets(manifest, target_ids, args.timeout, args.post_heal_wait)
+        status_snapshot = build_status(manifest, args.timeout)
+    status_delta = summarize_status_delta(previous_status, status_snapshot)
+
     analytics_report = collect_live_analytics(manifest, args.since_days, args.timeout)
     report_paths = write_analytics_report(paths, analytics_report) if args.write_report else {}
-    previous_status = previous.get("statusSnapshot") if isinstance(previous, dict) else None
     previous_analytics = previous.get("analyticsReport") if isinstance(previous, dict) else None
-    status_delta = summarize_status_delta(previous_status, status_snapshot)
     analytics_delta = (
         summarize_analytics_delta(previous_analytics, analytics_report)
         if previous_analytics
@@ -1517,8 +1628,15 @@ def command_autopilot(manifest: dict[str, Any], paths: BridgePaths, args: argpar
             "newTelemetryEvents": 0,
         }
     )
-    recovery = run_recovery_for_failures(manifest, status_delta["newFailures"]) if args.heal else []
-    notification_message = build_operator_notification(status_delta, analytics_delta, analytics_report)
+    notification_status_delta = {
+        **status_delta,
+        "newFailures": pre_recovery_status_delta.get("newFailures", []) or status_delta.get("newFailures", []),
+        "recoveries": [
+            *pre_recovery_status_delta.get("recoveries", []),
+            *status_delta.get("recoveries", []),
+        ],
+    }
+    notification_message = build_operator_notification(notification_status_delta, analytics_delta, analytics_report)
     notification = (
         post_discord_message(notification_message, manifest, args.timeout)
         if args.notify and notification_message
@@ -1531,9 +1649,11 @@ def command_autopilot(manifest: dict[str, Any], paths: BridgePaths, args: argpar
         "statusSnapshot": status_snapshot,
         "analyticsReport": analytics_report,
         "statusDelta": status_delta,
+        "preRecoveryStatusDelta": pre_recovery_status_delta,
         "analyticsDelta": analytics_delta,
         "reportPaths": report_paths,
         "recovery": recovery,
+        "recoveryVerification": recovery_verification,
         "notification": notification,
         "policy": {
             "externalOutreachWithoutApproval": False,
@@ -1553,9 +1673,15 @@ def command_autopilot(manifest: dict[str, Any], paths: BridgePaths, args: argpar
         "checkedAt": output["checkedAt"],
         "failureCount": status_snapshot.get("failureCount", 0),
         "statusDelta": status_delta,
+        "preRecoveryFailureCount": pre_recovery_status_snapshot.get("failureCount", 0),
         "analyticsDelta": analytics_delta,
         "reportPaths": report_paths,
         "recoveryCount": len(recovery),
+        "recoveryVerification": {
+            "status": recovery_verification.get("status"),
+            "targetIds": recovery_verification.get("targetIds", []),
+            "remainingFailures": recovery_verification.get("remainingFailures", []),
+        },
         "notification": notification,
         "warnings": analytics_report.get("warnings", []),
     }, indent=2, sort_keys=True))
@@ -1646,6 +1772,7 @@ def build_parser() -> argparse.ArgumentParser:
     autopilot.add_argument("--write-report", action="store_true")
     autopilot.add_argument("--notify", action="store_true")
     autopilot.add_argument("--heal", action="store_true")
+    autopilot.add_argument("--post-heal-wait", type=int, default=150)
 
     enqueue = subparsers.add_parser("enqueue", help="Create a guarded evolution task")
     enqueue.add_argument("--id", default=None)

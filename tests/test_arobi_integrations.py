@@ -11,9 +11,11 @@ from arobi_integrations.bridge import (
     create_task,
     load_manifest,
     process_tasks,
+    recoverable_failures,
     render_analytics_markdown,
     summarize_analytics_delta,
     summarize_status_delta,
+    status_failure_items,
     validate_task,
 )
 
@@ -132,6 +134,24 @@ class ArobiIntegrationBridgeTests(unittest.TestCase):
         delta = summarize_status_delta(previous, current)
         self.assertEqual(delta["newFailures"], [{"id": "aura-root", "label": "Aura", "status": "failed"}])
         self.assertEqual(delta["recoveries"], [{"id": "q-gateway-local", "label": "Q", "status": "ok"}])
+
+    def test_status_failure_items_include_current_recoverable_failures(self):
+        snapshot = {
+            "services": [
+                {"id": "superbrain-health", "label": "Superbrain", "status": "failed"},
+                {"id": "q-gateway-local", "label": "Q", "status": "ok"},
+            ],
+            "localRoots": [{"id": "immaculate", "label": "Immaculate root", "status": "ok"}],
+            "websiteArtifact": {"status": "ok"},
+        }
+        manifest = {
+            "recoveryCommands": {
+                "superbrain-health": [{"id": "start-harness", "argv": ["echo", "ok"]}],
+            }
+        }
+        failures = status_failure_items(snapshot)
+        self.assertEqual([item["id"] for item in failures], ["superbrain-health"])
+        self.assertEqual([item["id"] for item in recoverable_failures(manifest, failures)], ["superbrain-health"])
 
     def test_telemetry_aggregation_keeps_clicks_locations_and_dropoff(self):
         rows = [
