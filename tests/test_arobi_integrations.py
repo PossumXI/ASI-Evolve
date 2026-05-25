@@ -31,6 +31,9 @@ class ArobiIntegrationBridgeTests(unittest.TestCase):
                 "artifactRoot": str(tmp / "site" / "dist"),
                 "requiredTitle": "Arobi | Accountable AI products",
                 "requiredBundleMarker": "index-arobi-recovery-20260523-dashboard-20260523T1855Z.js",
+                "baselineProductionDeployId": "baseline-deploy",
+                "requiredProductionDeployId": "current-deploy",
+                "latestVerifiedProductionDeployId": "current-deploy",
                 "forbiddenDeployRoots": [str(tmp / "legacy")],
             },
             "localRoots": {"site": str(tmp / "site")},
@@ -47,7 +50,11 @@ class ArobiIntegrationBridgeTests(unittest.TestCase):
                 '<title>Arobi | Accountable AI products</title><script src="/assets/index-arobi-recovery-20260523-dashboard-20260523T1855Z.js"></script>',
                 encoding="utf-8",
             )
-            self.assertEqual(check_website_artifact(manifest)["status"], "ok")
+            artifact = check_website_artifact(manifest)
+            self.assertEqual(artifact["status"], "ok")
+            self.assertEqual(artifact["baselineProductionDeployId"], "baseline-deploy")
+            self.assertEqual(artifact["requiredProductionDeployId"], "current-deploy")
+            self.assertEqual(artifact["latestVerifiedProductionDeployId"], "current-deploy")
             (dist / "index.html").write_text("<title>Wrong</title>", encoding="utf-8")
             self.assertEqual(check_website_artifact(manifest)["status"], "failed")
 
@@ -117,6 +124,14 @@ class ArobiIntegrationBridgeTests(unittest.TestCase):
     def test_default_manifest_loads(self):
         manifest = load_manifest(None)
         self.assertEqual(manifest["website"]["canonicalRoot"], "D:/Websites")
+        self.assertEqual(
+            manifest["website"]["requiredProductionDeployId"],
+            manifest["website"]["latestVerifiedProductionDeployId"],
+        )
+        self.assertNotEqual(
+            manifest["website"]["baselineProductionDeployId"],
+            manifest["website"]["latestVerifiedProductionDeployId"],
+        )
 
     def test_status_delta_detects_failures_and_recoveries(self):
         previous = {

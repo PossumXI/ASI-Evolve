@@ -453,6 +453,8 @@ def http_probe(service: dict[str, Any], timeout: int) -> dict[str, Any]:
             "elapsedMs": elapsed_ms,
             "expectedStatuses": sorted(expected),
             "optional": bool(service.get("optional", False)),
+            "probeGroup": service.get("probeGroup"),
+            "recoveryTarget": service.get("recoveryTarget"),
             "sampleSha256": hashlib.sha256(sample).hexdigest(),
         }
     except urllib.error.HTTPError as error:
@@ -467,6 +469,8 @@ def http_probe(service: dict[str, Any], timeout: int) -> dict[str, Any]:
             "elapsedMs": elapsed_ms,
             "expectedStatuses": sorted(expected),
             "optional": bool(service.get("optional", False)),
+            "probeGroup": service.get("probeGroup"),
+            "recoveryTarget": service.get("recoveryTarget"),
             "error": redacted_error(error),
         }
     except Exception as error:  # noqa: BLE001 - status reporting must not crash the bridge.
@@ -480,6 +484,8 @@ def http_probe(service: dict[str, Any], timeout: int) -> dict[str, Any]:
             "elapsedMs": elapsed_ms,
             "expectedStatuses": sorted(expected),
             "optional": bool(service.get("optional", False)),
+            "probeGroup": service.get("probeGroup"),
+            "recoveryTarget": service.get("recoveryTarget"),
             "error": redacted_error(error),
         }
 
@@ -533,7 +539,11 @@ def check_website_artifact(manifest: dict[str, Any]) -> dict[str, Any]:
         "status": "ok" if not findings else "failed",
         "artifactRoot": str(artifact_root),
         "indexPath": str(index_path),
+        "baselineProductionDeployId": website.get("baselineProductionDeployId"),
         "requiredProductionDeployId": website.get("requiredProductionDeployId"),
+        "latestVerifiedProductionDeployId": website.get("latestVerifiedProductionDeployId"),
+        "latestVerifiedProductionDeployUrl": website.get("latestVerifiedProductionDeployUrl"),
+        "latestVerifiedAt": website.get("latestVerifiedAt"),
         "requiredTitle": required_title,
         "requiredBundleMarker": required_bundle,
         "findings": findings,
@@ -1075,7 +1085,11 @@ def status_failure_items(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 
 def recoverable_failures(manifest: dict[str, Any], failures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     recovery_commands = manifest.get("recoveryCommands", {})
-    return [failure for failure in failures if failure.get("id") in recovery_commands]
+    return [
+        failure
+        for failure in failures
+        if failure.get("id") in recovery_commands or failure.get("recoveryTarget") in recovery_commands
+    ]
 
 
 def build_operator_notification(
@@ -1156,7 +1170,8 @@ def run_recovery_for_failures(manifest: dict[str, Any], failures: list[dict[str,
     seen: set[str] = set()
     for failure in failures:
         service_id = failure.get("id")
-        for command in commands.get(service_id, []):
+        recovery_id = failure.get("recoveryTarget") or service_id
+        for command in commands.get(recovery_id, []):
             key = sha256_json({
                 "id": command.get("id"),
                 "cwd": command.get("cwd"),
@@ -1167,6 +1182,7 @@ def run_recovery_for_failures(manifest: dict[str, Any], failures: list[dict[str,
             seen.add(key)
             result = run_command(command)
             result["serviceId"] = service_id
+            result["recoveryTarget"] = recovery_id
             results.append(result)
     return results
 
