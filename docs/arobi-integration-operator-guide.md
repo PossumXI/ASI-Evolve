@@ -4,7 +4,7 @@ This fork is wired as a guarded research and improvement lane for Arobi systems.
 
 ## Canonical Connections
 
-- LaaS/Arobi website shell: `D:\Websites`, artifact `D:\Websites\dist`, public URL `https://aura-genesis.org`, current live guarded deploy `6a13abbd9db1b248ad5f0f9a`.
+- LaaS/Arobi website shell: `D:\Websites`, artifact `D:\Websites\dist`, public URL `https://aura-genesis.org`, current live guarded deploy `6a141f3aa26fdf45cfbbcaeb`.
 - Restore baseline for the extracted May 19 LaaS/Arobi artifact family: `6a137155e91c21e1dcf7a0dd`. This is a recovery anchor only, not the current production deploy after guarded patches.
 - Arobi public node: `https://arobi.aura-genesis.org`.
 - Superbrain/Immaculate public lane: `https://superbrain.aura-genesis.org/api/health`.
