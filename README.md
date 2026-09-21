@@ -12,7 +12,7 @@ A financial analyst, a biomedical engineer, a climate scientist, or a game devel
 
 ## Arobi Fork Integration
 
-This fork is also wired for Arobi's guarded operator stack. The local bridge lives in `arobi_integrations/` and connects ASI-Evolve to the protected LaaS/Arobi website shell, Immaculate, Q, JAWS/OpenJaws, and Discord-agent lanes through health snapshots and approval-gated dispatch packets.
+This fork is also wired for Arobi's guarded operator stack. The local bridge lives in `arobi_integrations/` and connects ASI-Evolve to the protected Arobi Spine evidence path, Immaculate, Q, Ullumii, and optional Discord-agent lanes through health snapshots and approval-gated dispatch packets. Legacy JAWS/OpenJaws identifiers may remain where compatibility requires them.
 
 Start with:
 
