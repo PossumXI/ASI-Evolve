@@ -1,9 +1,77 @@
-# Cognition seed: LLM routing (what is known to work, and what does not)
+# Route evidence for Darwin-Route
 
-Sources were read from the Hugging Face Hub on 2026-09-27: dataset cards, the candidate pricing table, and
-paper texts. Each claim names its source.
+`python -m arobi_integrations.route_evidence` turns public routing-benchmark rows into the content-free route
+observations that Immaculate's Darwin-Route learns from.
+- Darwin-Route lives in `apps/harness/src/darwin-route.ts` and `docs/architecture/DARWIN_ROUTE.md` in
+  PossumXI/Immaculate.
+- Each observation has the form `{taskClass, providerId, ok, latencyMs, costUsd, quality}`.
 
-## Findings from large-scale routing benchmarks
+Darwin-Route is the single route-policy search. ASI-Evolve does not run a second one. This module only
+supplies evidence that exists before live traffic does, for the models our providers actually serve.
+
+```text
+xRouteBench / RouterBench rows ──route_evidence──▶ benchmark-observations.jsonl (+ .manifest.json)
+Immaculate route-outcome sink (live)  ───────────▶ YYYY-MM-DD.ndjson
+                                                     │
+          npm run darwin:route -- evolve --observations … --outcomes-dir … ──▶ report.json
+          npm run darwin:route -- shadow (owner budget) ──▶ shadow.json
+          npm run darwin:route -- table ──▶ route-order-table.json + sha256 ──▶ gateway (pinned)
+```
+
+## What carries over, and what does not
+
+| field | value | why |
+|---|---|---|
+| `quality` | the item's task score (0–1) | measured by the benchmark on the same model |
+| `costUsd` | measured tokens × **this provider's** per-1M price from the catalog | the benchmark's host price is not what we pay |
+| `latencyMs` | `null` | the benchmark measured its host's latency, not our provider's |
+| `ok` | `true` | a wrong answer is low quality, not a failed call |
+
+**Model matching.** A provider gets rows only for the exact model it serves: `benchmarkModel` in the operator's
+catalog. With Immaculate's default fallbacks, that means `router-groq`, `router-cerebras` and
+`router-huggingface` for `gpt-oss-120b`. Other providers get no rows until live outcomes or shadow probes
+measure them.
+
+**Task classes.** Classes are Darwin-Route's: coding, research, reasoning, extraction, conversation.
+- The rule that decided each benchmark task is recorded in the manifest.
+- `--class-map` overrides any of them.
+
+```json
+{"providers": [
+  {"providerId": "router-groq", "benchmarkModel": "gpt-oss-120b", "inputPer1M": 0.15, "outputPer1M": 0.75},
+  {"providerId": "router-cloudflare", "benchmarkModel": null, "inputPer1M": 0, "outputPer1M": 0}
+]}
+```
+
+These prices are illustrative. Use the operator's actual contract prices.
+
+## Data rights
+
+Neither dataset card declares a license: `ulab-ai/xRouteBench` (arXiv:2608.06867) and `withmartian/routerbench`
+(arXiv:2403.12031). Immaculate's external-data rules default to DENY. Running this for real therefore waits on
+the owner's license and intended-use decision, which is recorded in Immaculate's `CURRENT_HANDOFF.md`. The
+intended use is seeding a routing prior, not training a model.
+
+RouterBench ships as a pandas pickle, and unpickling executes code. The module refuses to open it unless its
+sha256 matches `--expect-sha256`.
+
+## Running it (local session with network access)
+
+```bash
+pip install pandas pyarrow
+huggingface-cli download ulab-ai/xRouteBench --repo-type dataset --local-dir ~/data/xroutebench
+python -m arobi_integrations.route_evidence xroutebench \
+  --rows ~/data/xroutebench/llmrouter_generic/train.parquet \
+  --rows ~/data/xroutebench/llmrouter_generic/test.parquet \
+  --catalog provider_catalog.json --out benchmark-observations.jsonl
+# then, in PossumXI/Immaculate:
+npm run darwin:route -- evolve --observations benchmark-observations.jsonl \
+  --outcomes-dir "$IMMACULATE_ROUTE_OUTCOMES_DIR" --out report.json
+```
+
+## Research notes (read from the Hugging Face Hub, 2026-09-27)
+
+### Findings from large-scale routing benchmarks
 
 - **Models are complementary, and no single model dominates.** LLMRouterBench (arXiv:2601.07206) covers
   400K+ instances, 21 datasets and 33 models, including GPT-5, Claude 4 and Gemini 2.5 Pro.
@@ -25,8 +93,8 @@ paper texts. Each claim names its source.
   - their cost-aware reward is `α·norm(performance) − β·norm(price_cost)`.
 - **Routers collapse toward expensive models as the budget grows.** "When Routing Collapses"
   (arXiv:2602.03478) proposes learning direct model rankings (EquiRouter) instead, which lowers cost
-  without losing performance. Watch for tables that put the priciest candidate first in every cell when
-  `lambda_cost` is small.
+  without losing performance. Watch for candidates that put the priciest provider first in every task class when
+  the owner's `costPenaltyPerUsd` is small.
 - **Output length is a routing lever too.** R2-Router (arXiv:2602.02823) selects the model and a length
   budget jointly. Our table orders providers only, so this is out of scope for now.
 - **Router families** (as surveyed in arXiv:2608.06867):
@@ -38,7 +106,7 @@ paper texts. Each claim names its source.
   A cascade needs a second call. Here, the second entry in an order serves only when the first *fails*,
   so it is a fallback, not a cascade.
 
-## Datasets and what they measure
+### Datasets and what they measure
 
 - **xRouteBench** (`ulab-ai/xRouteBench`, Aug 2026; parquet): the primary source.
   - Every query was run against all 18 candidates, recording the response, task score (0–1), input and
@@ -56,7 +124,7 @@ paper texts. Each claim names its source.
 - **LLMRouterBench** (`NPULH/LLMRouterBench`; results tarball `bench-release.tar.gz`, 1.28 GB): the 33-model,
   21-dataset source used for the findings above.
 
-## xRouteBench candidate pool and published prices (USD per 1M tokens, input / output)
+### xRouteBench candidate pool and published prices (USD per 1M tokens, input / output)
 
 | candidate | size | input | output | served via |
 |---|---|---|---|---|
@@ -79,16 +147,3 @@ paper texts. Each claim names its source.
 | llama-3.3-70b-instruct-turbo | 70B | 0.88 | 0.88 | Together |
 | cogito-v2-1-671b | 671B | 1.25 | 1.25 | Together |
 
-## How this maps onto Immaculate's provider pool
-
-- **Default models of Immaculate's governed fallbacks** (`apps/harness/src/q-router-provider-adapters.ts`):
-  - `router-groq`, `router-cerebras` and `router-huggingface` serve **gpt-oss-120b**, which xRouteBench
-    measures directly.
-  - `router-mistral` serves `mistral-small-latest`, `router-google` serves a Gemini Flash model, and
-    `router-cloudflare` serves `gemma-4-26b-a4b-it`.
-  - `router-openrouter` serves `openrouter/free`, whose model changes.
-- **Only gpt-oss-120b is covered by public data.** The other providers' models are not the same as any
-  xRouteBench candidate (for example, Mistral-Small-24B-2501 is not `mistral-small-latest`). Ranking them
-  honestly requires measuring them on the xRouteBench raw queries (`npm run q:route-measure`, then
-  `score_responses.py`). Until then, the table lists them as unmeasured and keeps their configured order.
-- **Q (`q-horizon`) always serves first.** The table only orders the fallbacks behind it.
