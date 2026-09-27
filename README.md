@@ -293,6 +293,8 @@ Configuration merges in this order (later overrides earlier):
 2. `experiments/<name>/config.yaml`
 3. An explicit file passed with `--config`
 
+String values of the form `${VAR}` are read from the environment. The root `config.yaml` ships placeholder API values, and the LLM client refuses to start while `api.base_url`, `api.api_key` or `api.model` still hold them (or are empty), so an experiment config must set the API. `experiments/arobi/config.yaml` points at the Immaculate Q gateway through `IMMACULATE_Q_GATEWAY_BASE_URL` and `IMMACULATE_Q_API_KEY` with model `Q`.
+
 Key settings:
 
 | Key | What It Controls |

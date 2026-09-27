@@ -6,6 +6,18 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+# Values shipped in the upstream root config.yaml. A call made with them can
+# only fail at the provider, so they are refused before any client is built.
+UPSTREAM_API_PLACEHOLDERS = {
+    "base_url": "your_base_url",
+    "api_key": "your_api_key",
+    "model": "your_model",
+}
+
+
+class ConfigError(ValueError):
+    """Raised when a configuration cannot be used as written."""
+
 
 def deep_merge(base: Dict, override: Dict) -> Dict:
     """
@@ -89,6 +101,25 @@ def load_experiment_config(experiment_name: str) -> Dict[str, Any]:
         Resolved configuration.
     """
     return load_config(experiment_name=experiment_name)
+
+
+def validate_api_config(config: Dict[str, Any]) -> None:
+    """Refuse upstream placeholders and empty API settings with a clear error."""
+    api = config.get("api") or {}
+    problems = []
+    for key, placeholder in UPSTREAM_API_PLACEHOLDERS.items():
+        value = api.get(key)
+        if value == placeholder:
+            problems.append(f"api.{key} is still the upstream placeholder {placeholder!r}")
+        elif value is None or (isinstance(value, str) and not value.strip()):
+            problems.append(f"api.{key} is empty (an unset ${{VAR}} resolves to an empty string)")
+    if problems:
+        raise ConfigError(
+            "LLM API is not configured: "
+            + "; ".join(problems)
+            + ". Run an experiment whose config sets the API, for example "
+            "`--experiment arobi` with IMMACULATE_Q_GATEWAY_BASE_URL and IMMACULATE_Q_API_KEY set."
+        )
 
 
 def _resolve_env_vars(obj: Any) -> Any:

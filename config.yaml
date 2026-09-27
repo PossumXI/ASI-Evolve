@@ -7,7 +7,9 @@
 experiment_name: "default"
 
 # API configuration
-# In practice, experiment-level config files usually override these values.
+# In practice, experiment-level config files override these values. The
+# placeholders below are refused by create_llm_client; see
+# experiments/arobi/config.yaml for the Immaculate Q gateway wiring.
 api:
   provider: "openai"  # Any OpenAI-compatible endpoint
   base_url: "your_base_url"
