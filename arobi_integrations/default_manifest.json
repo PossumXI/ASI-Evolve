@@ -1,62 +1,79 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedFor": "Arobi Technology Alliance",
   "mode": "guarded-local-operator",
-  "stateRoot": "D:/ASI-Evolve/.arobi-evolve",
+  "pathNotes": "Relative paths resolve against the ASI-Evolve checkout. ${VAR:-default} reads the environment; <root:NAME> is a resolved localRoots entry, <state> the state root, <filesystem-root> the drive or / holding this checkout.",
+  "stateRoot": "${AROBI_EVOLVE_STATE_ROOT:-.arobi-evolve}",
   "statusProbeWorkers": 6,
   "secretEnvScripts": [
-    "D:/openjaws/OpenJaws/local-command-station/discord-q-agent.env.ps1"
+    "${AROBI_EVOLVE_SECRET_ENV_SCRIPT:-<root:openjaws>/local-command-station/discord-q-agent.env.ps1}"
   ],
+  "localRoots": {
+    "asiEvolve": "${AROBI_EVOLVE_ROOT_ASI_EVOLVE:-.}",
+    "website": "${AROBI_EVOLVE_ROOT_WEBSITE:-../Asgard_Arobi/Websites}",
+    "immaculate": "${AROBI_EVOLVE_ROOT_IMMACULATE:-../Immaculate}",
+    "openjaws": "${AROBI_EVOLVE_ROOT_OPENJAWS:-../OpenJaws}"
+  },
+  "operatorStateDirs": {
+    "arobi": "${AROBI_EVOLVE_AROBI_HOME:-~/.arobi}",
+    "arobiPublic": "${AROBI_EVOLVE_AROBI_PUBLIC_HOME:-~/.arobi-public}",
+    "arobiRailway": "${AROBI_EVOLVE_AROBI_RAILWAY_HOME:-~/.arobi-railway}",
+    "cloudflared": "${AROBI_EVOLVE_CLOUDFLARED_HOME:-~/.cloudflared}"
+  },
   "website": {
-    "canonicalRoot": "D:/Websites",
-    "artifactRoot": "D:/Websites/dist",
-    "functionsRoot": "D:/Websites/netlify/functions",
-    "publicUrl": "https://aura-genesis.org",
-    "requiredTitle": "Arobi | Accountable AI products",
-    "requiredBundleMarker": "index-arobi-recovery-20260523-dashboard-20260523T1855Z.js",
-    "baselineProductionDeployId": "6a137155e91c21e1dcf7a0dd",
-    "requiredProductionDeployId": "6a141f3aa26fdf45cfbbcaeb",
-    "latestVerifiedProductionDeployId": "6a141f3aa26fdf45cfbbcaeb",
-    "latestVerifiedProductionDeployUrl": "https://6a141f3aa26fdf45cfbbcaeb--aura-genesis.netlify.app",
-    "latestVerifiedAt": "2026-05-25T10:08:09Z",
+    "publicUrl": "${AROBI_EVOLVE_PUBLIC_URL:-https://aura-genesis.org}",
+    "sourceIndex": "<root:website>/index.html",
+    "artifactRoot": "<root:website>/dist",
     "forbiddenDeployRoots": [
-      "D:/Websites/aura-genesis.org",
-      "D:/",
-      "D:/cheeks/Asgard",
-      "D:/openjaws/OpenJaws",
-      "C:/Users/Knight/Desktop/Immaculate"
+      "<root:website>/aura-genesis.org",
+      "<filesystem-root>",
+      "<root:openjaws>",
+      "<root:immaculate>",
+      "${AROBI_EVOLVE_LEGACY_ASGARD_ROOT}"
     ]
+  },
+  "endpoints": {
+    "qGatewayHealth": "${IMMACULATE_Q_GATEWAY_URL:-http://127.0.0.1:8897}/health"
+  },
+  "analytics": {
+    "telemetrySites": ["aura-genesis.org", "qline.site", "iorch.net"],
+    "funnelPaths": {
+      "pricing": "/pricing",
+      "autonomo": "/autonomo",
+      "apex": "/app/apex-os",
+      "dashboard": "/dashboard"
+    }
   },
   "services": [
     {
       "id": "aura-root",
       "label": "Aura Genesis LaaS shell",
-      "url": "https://aura-genesis.org/",
+      "url": "${AROBI_EVOLVE_PUBLIC_URL:-https://aura-genesis.org}/",
       "expectedStatuses": [200]
     },
     {
       "id": "aura-fabric",
       "label": "Aura public fabric status",
-      "url": "https://aura-genesis.org/api/fabric/public-status",
+      "url": "${AROBI_EVOLVE_PUBLIC_URL:-https://aura-genesis.org}/api/fabric/public-status",
       "expectedStatuses": [200]
     },
     {
       "id": "aura-superbrain-bridge",
       "label": "Aura same-origin Superbrain bridge",
-      "url": "https://aura-genesis.org/api/superbrain/status",
+      "url": "${AROBI_EVOLVE_PUBLIC_URL:-https://aura-genesis.org}/api/superbrain/status",
       "probeGroup": "superbrain-harness",
       "recoveryTarget": "superbrain-health",
       "expectedStatuses": [200]
     },
     {
       "id": "arobi-public-info",
-      "label": "Arobi public node info",
-      "url": "https://arobi.aura-genesis.org/api/v1/info",
+      "label": "Arobi spine public node info (aura-genesis.org/arobi -> arobi-public-status)",
+      "url": "${AROBI_EVOLVE_PUBLIC_URL:-https://aura-genesis.org}/arobi/api/v1/info",
       "expectedStatuses": [200]
     },
     {
       "id": "arobi-public-fabric",
-      "label": "Arobi public fabric verification",
+      "label": "Arobi host public fabric verification",
       "url": "https://arobi.aura-genesis.org/api/fabric/public-status",
       "expectedStatuses": [200]
     },
@@ -70,16 +87,56 @@
     {
       "id": "immaculate-local-harness",
       "label": "Immaculate local harness",
-      "url": "http://127.0.0.1:8787/api/health",
+      "url": "${IMMACULATE_HARNESS_URL:-http://127.0.0.1:8787}/api/health",
       "probeGroup": "superbrain-harness",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "qicr-verifier-health",
+      "label": "QICR verifier health (local harness; Q API routes need IMMACULATE_API_KEY and IMMACULATE_Q_API_ENABLED on the harness)",
+      "url": "${IMMACULATE_HARNESS_URL:-http://127.0.0.1:8787}/api/qicr/verifier/healthz",
+      "probeGroup": "superbrain-harness",
+      "auth": {"env": "IMMACULATE_API_KEY", "header": "Authorization", "scheme": "Bearer"},
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "qicr-verifier-ready",
+      "label": "QICR verifier readiness (503 = not ready)",
+      "url": "${IMMACULATE_HARNESS_URL:-http://127.0.0.1:8787}/api/qicr/verifier/readyz",
+      "probeGroup": "superbrain-harness",
+      "auth": {"env": "IMMACULATE_API_KEY", "header": "Authorization", "scheme": "Bearer"},
       "expectedStatuses": [200]
     },
     {
       "id": "q-gateway-local",
       "label": "Q local gateway",
-      "url": "http://127.0.0.1:8897/health",
+      "url": "${IMMACULATE_Q_GATEWAY_URL:-http://127.0.0.1:8897}/health",
       "expectedStatuses": [200],
       "optional": true
+    },
+    {
+      "id": "q-gateway-public",
+      "label": "Q gateway public health (q.aura-genesis.org)",
+      "url": "https://q.aura-genesis.org/health",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "laas-public",
+      "label": "Immaculate LaaS API public health (laas.aura-genesis.org)",
+      "url": "https://laas.aura-genesis.org/health",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "hosted-q",
+      "label": "Hosted Q worker health (hosted-q.aura-genesis.org)",
+      "url": "https://hosted-q.aura-genesis.org/health",
+      "expectedStatuses": [200]
+    },
+    {
+      "id": "downloads-catalog",
+      "label": "Signed release catalog (downloads.aura-genesis.org)",
+      "url": "https://downloads.aura-genesis.org/jaws/latest.json",
+      "expectedStatuses": [200]
     },
     {
       "id": "discord-bridge",
@@ -94,34 +151,22 @@
       "expectedStatuses": [200]
     }
   ],
-  "localRoots": {
-    "asiEvolve": "D:/ASI-Evolve",
-    "website": "D:/Websites",
-    "immaculate": "C:/Users/Knight/Desktop/Immaculate",
-    "openjaws": "D:/openjaws/OpenJaws",
-    "arobi": "C:/Users/Knight/.arobi",
-    "arobiPublic": "C:/Users/Knight/.arobi-public",
-    "arobiRailway": "C:/Users/Knight/.arobi-railway",
-    "cloudflared": "C:/Users/Knight/.cloudflared"
-  },
   "automation": {
     "pollIntervalSeconds": 900,
     "analyticsWindowDays": 7,
     "notifyFounderOn": [
       "new route or service failures",
       "route or service recoveries",
-      "new active or trialing subscriptions",
-      "new paid/proven AURA token orders",
-      "new authenticated users",
-      "new site telemetry events"
+      "analytics deltas from the configured analytics source",
+      "tasks newly held for signed approval"
     ],
     "autonomousActionsAllowed": [
       "read-only production health checks",
-      "read-only Supabase aggregate analytics",
-      "read-only Stripe direct checks when the key is valid",
+      "read-only operator analytics through the auth-gated Asgard API",
+      "direct Supabase/Stripe reads only when the direct fallback is explicitly enabled",
       "local safe recovery commands for Q gateway and approved local services",
       "Discord founder notifications without secrets or customer PII",
-      "dispatch packets to Q, Immaculate, JAWS/OpenJaws, Discord, and LaaS outboxes"
+      "signed delivery of approved tasks to Immaculate's governed ASI intake"
     ],
     "approvalStillRequired": [
       "production deploys",
@@ -135,61 +180,86 @@
     "superbrain-health": [
       {
         "id": "start-immaculate-harness-supervisor",
-        "cwd": "D:/openjaws/OpenJaws/local-command-station",
+        "platforms": ["windows"],
+        "cwd": "<root:openjaws>/local-command-station",
         "argv": [
           "powershell",
           "-NoProfile",
           "-ExecutionPolicy",
           "Bypass",
           "-Command",
-          "Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','D:\\openjaws\\OpenJaws\\local-command-station\\start-immaculate-harness.ps1') -WorkingDirectory 'D:\\openjaws\\OpenJaws\\local-command-station' -WindowStyle Hidden"
+          "Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','<root:openjaws>\\local-command-station\\start-immaculate-harness.ps1') -WorkingDirectory '<root:openjaws>\\local-command-station' -WindowStyle Hidden"
         ],
+        "timeoutSec": 30
+      },
+      {
+        "id": "start-immaculate-harness-detached",
+        "platforms": ["posix"],
+        "cwd": "<root:immaculate>",
+        "argv": ["sh", "-c", "nohup npm run harness:serve >> \"$0\" 2>&1 &", "<state>/logs/immaculate-harness.log"],
         "timeoutSec": 30
       }
     ],
     "immaculate-local-harness": [
       {
         "id": "start-immaculate-harness-supervisor",
-        "cwd": "D:/openjaws/OpenJaws/local-command-station",
+        "platforms": ["windows"],
+        "cwd": "<root:openjaws>/local-command-station",
         "argv": [
           "powershell",
           "-NoProfile",
           "-ExecutionPolicy",
           "Bypass",
           "-Command",
-          "Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','D:\\openjaws\\OpenJaws\\local-command-station\\start-immaculate-harness.ps1') -WorkingDirectory 'D:\\openjaws\\OpenJaws\\local-command-station' -WindowStyle Hidden"
+          "Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','<root:openjaws>\\local-command-station\\start-immaculate-harness.ps1') -WorkingDirectory '<root:openjaws>\\local-command-station' -WindowStyle Hidden"
         ],
+        "timeoutSec": 30
+      },
+      {
+        "id": "start-immaculate-harness-detached",
+        "platforms": ["posix"],
+        "cwd": "<root:immaculate>",
+        "argv": ["sh", "-c", "nohup npm run harness:serve >> \"$0\" 2>&1 &", "<state>/logs/immaculate-harness.log"],
         "timeoutSec": 30
       }
     ],
     "q-gateway-local": [
       {
         "id": "start-q-gateway-hidden",
-        "cwd": "C:/Users/Knight/Desktop/Immaculate",
+        "platforms": ["windows"],
+        "cwd": "<root:immaculate>",
         "argv": [
           "powershell",
           "-NoProfile",
           "-ExecutionPolicy",
           "Bypass",
           "-Command",
-          "Start-Process -FilePath npm.cmd -ArgumentList @('run','q:gateway') -WorkingDirectory 'C:\\Users\\Knight\\Desktop\\Immaculate' -WindowStyle Hidden"
+          "Start-Process -FilePath npm.cmd -ArgumentList @('run','q:gateway') -WorkingDirectory '<root:immaculate>' -WindowStyle Hidden"
         ],
+        "timeoutSec": 30
+      },
+      {
+        "id": "start-q-gateway-detached",
+        "platforms": ["posix"],
+        "cwd": "<root:immaculate>",
+        "argv": ["sh", "-c", "nohup npm run q:gateway >> \"$0\" 2>&1 &", "<state>/logs/q-gateway.log"],
         "timeoutSec": 30
       }
     ],
     "discord-bridge": [
       {
         "id": "start-discord-q-direct",
-        "cwd": "D:/openjaws/OpenJaws/local-command-station",
+        "platforms": ["windows"],
+        "cwd": "<root:openjaws>/local-command-station",
         "argv": [
           "powershell",
           "-NoProfile",
           "-ExecutionPolicy",
           "Bypass",
           "-File",
-          "D:\\openjaws\\OpenJaws\\local-command-station\\start-discord-q-direct.ps1",
+          "<root:openjaws>\\local-command-station\\start-discord-q-direct.ps1",
           "-EnvFile",
-          "D:\\openjaws\\OpenJaws\\local-command-station\\discord-q-agent.env.ps1",
+          "<root:openjaws>\\local-command-station\\discord-q-agent.env.ps1",
           "-AgentLabel",
           "Q",
           "-StartupTimeoutSeconds",
@@ -201,14 +271,15 @@
     "linkedin-bridge": [
       {
         "id": "start-linkedin-bridge",
-        "cwd": "D:/openjaws/OpenJaws/local-command-station",
+        "platforms": ["windows"],
+        "cwd": "<root:openjaws>/local-command-station",
         "argv": [
           "powershell",
           "-NoProfile",
           "-ExecutionPolicy",
           "Bypass",
           "-File",
-          "D:\\openjaws\\OpenJaws\\local-command-station\\start-linkedin-bridge.ps1"
+          "<root:openjaws>\\local-command-station\\start-linkedin-bridge.ps1"
         ],
         "timeoutSec": 240
       }
@@ -218,13 +289,13 @@
     "website": [
       {
         "id": "operator-handoff",
-        "cwd": "D:/Websites",
+        "cwd": "<root:website>",
         "argv": ["npm", "run", "operator:handoff:check"],
         "timeoutSec": 120
       },
       {
         "id": "production-smokes",
-        "cwd": "D:/Websites",
+        "cwd": "<root:website>",
         "argv": ["npm", "run", "test:production-smokes"],
         "timeoutSec": 240
       }
@@ -232,13 +303,13 @@
     "immaculate": [
       {
         "id": "operator-readiness",
-        "cwd": "C:/Users/Knight/Desktop/Immaculate",
+        "cwd": "<root:immaculate>",
         "argv": ["npm", "run", "operator:readiness"],
         "timeoutSec": 240
       },
       {
         "id": "live-operator-activity",
-        "cwd": "C:/Users/Knight/Desktop/Immaculate",
+        "cwd": "<root:immaculate>",
         "argv": ["npm", "run", "live:operator:activity"],
         "timeoutSec": 180
       }
@@ -246,19 +317,19 @@
     "openjaws": [
       {
         "id": "serious-approval",
-        "cwd": "D:/openjaws/OpenJaws",
+        "cwd": "<root:openjaws>",
         "argv": ["bun", "run", "serious:approval:ready"],
         "timeoutSec": 180
       },
       {
         "id": "guardrails",
-        "cwd": "D:/openjaws/OpenJaws",
+        "cwd": "<root:openjaws>",
         "argv": ["bun", "run", "orchestration:guardrails"],
         "timeoutSec": 180
       },
       {
         "id": "roundtable-status",
-        "cwd": "D:/openjaws/OpenJaws",
+        "cwd": "<root:openjaws>",
         "argv": ["bun", "run", "roundtable:runtime"],
         "timeoutSec": 180
       }

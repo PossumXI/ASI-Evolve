@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $Python = "python"
-$StateRoot = Join-Path $Root ".arobi-evolve"
+$StateRoot = if ($env:AROBI_EVOLVE_STATE_ROOT) { $env:AROBI_EVOLVE_STATE_ROOT } else { Join-Path $Root ".arobi-evolve" }
 $LogRoot = Join-Path $StateRoot "logs"
 $StatusRoot = Join-Path $StateRoot "status"
 $HeartbeatPath = Join-Path $StatusRoot "bridge-heartbeat.json"
@@ -133,6 +133,7 @@ function Invoke-ArobiEvolvePass {
       "-m", "arobi_integrations", "autopilot",
       "--write-report",
       "--heal",
+      "--deliver",
       "--timeout", "$TimeoutSeconds",
       "--post-heal-wait", "$PostHealWaitSeconds"
     )

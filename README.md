@@ -12,19 +12,27 @@ A financial analyst, a biomedical engineer, a climate scientist, or a game devel
 
 ## Arobi Fork Integration
 
-This fork is also wired for Arobi's guarded operator stack. The local bridge lives in `arobi_integrations/` and connects ASI-Evolve to the protected Arobi Spine evidence path, Immaculate, Q, Ullumii, and optional Discord-agent lanes through health snapshots and approval-gated dispatch packets. Legacy JAWS/OpenJaws identifiers may remain where compatibility requires them.
+This fork is also wired for Arobi's guarded operator stack. The bridge in `arobi_integrations/` does exactly this:
 
-Start with:
+- **Immaculate:** delivers approval-gated tasks as HMAC-signed dispatch packets to the governed intake `POST /api/asi/dispatch` (issuer, nonce, expiry, Immaculate-canonical `packetSha256`), and records Immaculate's intake receipt. Immaculate's roundtable is the fan-out to Q, OpenJaws and Discord.
+- **Arobi spine and public routes:** probes the public spine node info (`aura-genesis.org/arobi/api/v1/info`), the arobi host fabric status, the site, Superbrain, the LaaS API (`laas.aura-genesis.org`), hosted Q, and the signed Ullumii Desktop release catalog (`downloads.aura-genesis.org`).
+- **Q:** probes the local and public Q gateway, and `experiments/arobi/config.yaml` routes ASI-Evolve's own LLM calls through the Immaculate Q gateway.
+- **QICR:** probes the harness QICR verifier health and readiness (authenticated with the harness API key).
+- **Analytics:** reads the auth-gated Asgard operator analytics API; direct Supabase reads are an explicit fallback only.
+- **Discord:** founder-only notifications for route changes, analytics deltas and tasks held for approval.
 
-```powershell
-cd D:\ASI-Evolve
+Ullumii Cloud's functions are user-authenticated and are not monitored by this bridge. Legacy JAWS/OpenJaws identifiers remain where compatibility requires them (the `jaws/` release paths and the OpenJaws checkout).
+
+Start with (from the repository root):
+
+```bash
 python -m arobi_integrations status --write-snapshot
 python -m arobi_integrations analytics --write-report
-python -m arobi_integrations autopilot --write-report --notify --heal
+python -m arobi_integrations autopilot --write-report --notify --heal --deliver
 python -m arobi_integrations seed-arobi --process
 ```
 
-The autopilot runs read-only route checks, private aggregate website analytics, safe local recovery for configured local services, founder-only Discord notifications, and approval-gated task dispatch. It does not deploy production, send external outreach, mutate billing, mutate databases, change infrastructure, or expose secrets. Serious tasks are held until exact founder and policy-governor approval is attached. See `docs/arobi-integration-operator-guide.md`.
+The autopilot runs read-only route checks, operator analytics, safe local recovery for configured local services, founder-only Discord notifications, and signed delivery of approved tasks. It does not deploy production, send external outreach, mutate billing, mutate databases, change infrastructure, or expose secrets. Serious tasks are held until signed founder and policy-governor approval tokens verify. Missing keys are reported as `not_configured`, never as success. See `docs/arobi-integration-operator-guide.md`.
 
 <div align="center">
 
