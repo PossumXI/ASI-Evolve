@@ -1,80 +1,217 @@
 # Route evidence for Darwin-Route
 
-`python -m arobi_integrations.route_evidence` turns public routing-benchmark rows into the content-free route
-observations that Immaculate's Darwin-Route learns from.
+`python -m arobi_integrations.route_evidence` turns permissively licensed third-party routing data into the
+content-free route observations that Immaculate's Darwin-Route learns from.
 - Darwin-Route lives in `apps/harness/src/darwin-route.ts` and `docs/architecture/DARWIN_ROUTE.md` in
   PossumXI/Immaculate.
-- Each observation has the form `{taskClass, providerId, ok, latencyMs, costUsd, quality}`.
+- Each observation has the form `{taskClass, providerId, ok, latencyMs, costUsd, quality}` (plus a `source`
+  provenance string, which Darwin-Route ignores).
 
 Darwin-Route is the single route-policy search. ASI-Evolve does not run a second one. This module only
 supplies evidence that exists before live traffic does, for the models our providers actually serve.
 
 ```text
-xRouteBench / RouterBench rows ──route_evidence──▶ benchmark-observations.jsonl (+ .manifest.json)
-Immaculate route-outcome sink (live)  ───────────▶ YYYY-MM-DD.ndjson
-                                                     │
+MANIFEST-SOURCES.json + DOWNLOADS.json (operator, pinned)
+        │ licence gate ─▶ commit pin ─▶ sha256 pin
+        ▼
+pinned file ──route_evidence──▶ observations.jsonl (+ .manifest.json)          ──▶ darwin:route evolve
+                           └──▶ evaluation.jsonl   (+ .manifest.json)          ──▶ evaluation reference only
+Immaculate route-outcome sink (live, our own data) ──▶ YYYY-MM-DD.ndjson          ──▶ darwin:route evolve
           npm run darwin:route -- evolve --observations … --outcomes-dir … ──▶ report.json
           npm run darwin:route -- shadow (owner budget) ──▶ shadow.json
           npm run darwin:route -- table ──▶ route-order-table.json + sha256 ──▶ gateway (pinned)
 ```
 
-## What carries over, and what does not
+## Licence rule
 
-| field | value | why |
-|---|---|---|
-| `quality` | the item's task score (0–1) | measured by the benchmark on the same model |
-| `costUsd` | measured tokens × **this provider's** per-1M price from the catalog | the benchmark's host price is not what we pay |
-| `latencyMs` | `null` | the benchmark measured its host's latency, not our provider's |
-| `ok` | `true` | a wrong answer is low quality, not a failed call |
+Owner decision, 2026-09-28, recorded by knight-af on PossumXI/ASI-Evolve#1:
 
-**Model matching.** A provider gets rows only for the exact model it serves: `benchmarkModel` in the operator's
-catalog. With Immaculate's default fallbacks, that means `router-groq`, `router-cerebras` and
-`router-huggingface` for `gpt-oss-120b`. Other providers get no rows until live outcomes or shadow probes
-measure them.
+- Third-party routing data may be used **only** under a permissive licence. The allowed SPDX ids are
+  `MIT`, `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `CC-BY-4.0`, `CC0-1.0` and `Unlicense`.
+- The licence must be verified from **both** the dataset card and a licence file in the repository. The source
+  manifest records both. Both must be on the list, and they must agree. The repository file cannot be the card
+  itself (`README.md`).
+- The gate refuses a missing licence, a licence not on the list, an SPDX expression (`MIT OR …`), the ambiguous
+  Hub id `bsd`, a card and a licence file that disagree, and a licence other than the one the adapter was pinned
+  with.
+- Our own data is always allowed. That covers Immaculate's route-outcome sink and the observations written by
+  `darwin:route measure` and `shadow`. It goes to Darwin-Route directly and never passes through this module.
 
-**Task classes.** Classes are Darwin-Route's: coding, research, reasoning, extraction, conversation.
-- The rule that decided each benchmark task is recorded in the manifest.
-- `--class-map` overrides any of them.
+**Refused sources.** The live cards for `ulab-ai/xRouteBench`, `withmartian/routerbench` and
+`NPULH/LLMRouterBench` declare no licence.
+- Their adapters are removed.
+- The `xroutebench`, `routerbench` and `llmrouterbench` commands only print the refusal and exit 2. They do not
+  read any file (the RouterBench pickle is never opened).
+- The licence gate refuses those repositories even when a manifest claims a licence for them.
+- Lifting the refusal takes a code change after the owner re-verifies both the card and the repository files.
+
+## Pinning: the manifests the operator passes
+
+Nothing is fetched. The operator downloads each file, pins it, and passes both manifests plus the local copy.
+The two manifests may be separate files or one file holding both lists. Either may also be a bare JSON list.
+
+`MANIFEST-SOURCES.json` holds one entry per repository:
 
 ```json
-{"providers": [
-  {"providerId": "router-groq", "benchmarkModel": "gpt-oss-120b", "inputPer1M": 0.15, "outputPer1M": 0.75},
-  {"providerId": "router-cloudflare", "benchmarkModel": null, "inputPer1M": 0, "outputPer1M": 0}
+{"sources": [
+  {
+    "repo": "DJLougen/eljefe-router-data",
+    "commit": "3239a7df…(7 to 40 hex; the full id is preferred)",
+    "license": {
+      "card": "apache-2.0",
+      "repoFile": {"path": "LICENSE", "spdx": "Apache-2.0", "sha256": "…optional…"}
+    }
+  }
 ]}
 ```
 
-These prices are illustrative. Use the operator's actual contract prices.
+`DOWNLOADS.json` holds one entry per downloaded file:
 
-## Data rights
+```json
+{"downloads": [
+  {
+    "repo": "DJLougen/eljefe-router-data",
+    "commit": "3239a7df…",
+    "path": "scored_gptoss120b.jsonl",
+    "sha256": "…64 hex of the file as downloaded (the .gz itself for a gzip file)…",
+    "bytes": 1234567,
+    "rows": 997
+  }
+]}
+```
 
-Neither dataset card declares a license: `ulab-ai/xRouteBench` (arXiv:2608.06867) and `withmartian/routerbench`
-(arXiv:2403.12031). Immaculate's external-data rules default to DENY. Running this for real therefore waits on
-the owner's license and intended-use decision, which is recorded in Immaculate's `CURRENT_HANDOFF.md`. The
-intended use is seeding a routing prior, not training a model.
+A file is read only when all of the following hold:
+1. The repository passes the licence gate.
+2. The source commit starts with the revision the adapter was written for.
+3. The download entry's commit agrees with the source commit.
+4. The local file's sha256, and `bytes` when given, match the pin.
 
-RouterBench ships as a pandas pickle, and unpickling executes code. The module refuses to open it unless its
-sha256 matches `--expect-sha256`.
+`rows` is optional. When given, it is checked against the number of records in the file before any row is
+dropped. Each output manifest records the provenance:
+- the repository, commit, path, sha256 and licence evidence;
+- an attribution line (CC-BY-4.0 requires credit wherever the evidence is shared);
+- the sha256 of both manifests and of the catalog.
 
-## Running it (local session with network access)
+## Sources and their rules
+
+| command | pinned source | licence | file | becomes |
+|---|---|---|---|---|
+| `eljefe-router-data` | `DJLougen/eljefe-router-data@3239a7df` | Apache-2.0 | `scored_gptoss120b.jsonl` (997 rows) | observations for `router-groq`, `router-huggingface` and `router-cerebras` |
+| `icl-router` | `lalalamdbf/ICL-Router@6f2aa6eb` | Apache-2.0 | `train_router.json` (29,272 rows) | observations only for a catalog provider serving that exact model; Llama rows evaluation-only |
+| `dataset-a-routing` | `massaindustries/dataset-A-routing@48bfd5ce` | CC-BY-4.0 | `data/results/train.jsonl.gz` (5,505 rows) | evaluation reference only (the command has no `--out`) |
+
+**eljefe-router-data.** Only the gpt-oss-120b (`frontier_*`) arm seeds observations. It seeds only
+`router-groq`, `router-huggingface` and `router-cerebras`, each only while the catalog says it serves
+gpt-oss-120b. Another provider serving the same model (Fireworks, for instance) is not seeded.
+
+| field | value | why |
+|---|---|---|
+| `quality` | `frontier_score` (0–1) | measured on the same model |
+| `ok` | `true` | a wrong answer is low quality, not a failed call |
+| `latencyMs` | `null` | `frontier_latency_ms` was measured on Fireworks, not on these providers |
+| `costUsd` | `frontier_input_tokens` × the provider's own input price + `frontier_output_tokens` × its own output price | `frontier_cost` is Fireworks' price and is never read; unknown tokens give `null` |
+
+The `local_*` arm (gemma-4-E4B-it) goes to the evaluation output. So do gpt-oss-120b rows whose task has no
+class. A row whose `frontier_score` is missing or outside 0–1 is dropped and counted.
+
+**icl-router.** Every Meta Llama row is evaluation-only (`llama-licence-naming-clause`). The rule names
+Llama-3.1, whose licence carries a naming clause for anything built from its outputs. The gate covers the whole
+Llama family, which carries the same obligations.
+- This holds even when a catalog provider serves that exact Llama model.
+- Any other row becomes an observation only for catalog providers whose `servedModel` is that exact model:
+  - `quality` is `is_correct_direct` (0 or 1);
+  - `ok` is `true`;
+  - `latencyMs` and `costUsd` are `null`, because neither latency nor token counts are recorded.
+- Rows for models no provider serves go to the evaluation output.
+
+**dataset-a-routing.** The dataset is an evaluation reference only: none of our fallbacks serves its models (the
+`qwen`, `ds4` and `kimi` arms).
+- Dropped from all output, with counts in the manifest:
+  - the `_schema_anchor` row;
+  - AIME and LiveCodeBench rows, because of upstream copyright. The rule names AIME-2025, and every AIME year
+    carries the same copyright.
+- Rows marked `gated` are kept (content-free) and counted.
+
+**Task classes.** The owner's mapping onto Darwin-Route's classes:
+
+| benchmark task | Darwin-Route class |
+|---|---|
+| `mbpp` | coding |
+| `gsm8k`, `math500`, `mmlu_pro` | reasoning |
+| `ifeval` | extraction (format-constrained instruction following) |
+
+Names are compared lower-cased with punctuation removed, so `MMLU-Pro` is `mmlu_pro`. Any other task has no class
+and never becomes an observation. The manifest records the deciding rule for every task seen, for example
+`owner-map:mmlupro->reasoning`.
+
+## Evaluation output
+
+`--evaluation-out` holds rows that must never be route observations for a serving provider. Each line has this
+form:
+
+```json
+{"schema": "arobi.route-evaluation.v1", "use": "evaluation-only", "reason": "llama-licence-naming-clause",
+ "source": "lalalamdbf/ICL-Router@6f2aa6eb:train_router.json", "item": "2", "task": "gsm8k",
+ "taskClass": "reasoning", "model": "Llama-3.1-8B-Instruct", "quality": 1.0}
+```
+
+- `reason` is one of `llama-licence-naming-clause`, `model-not-served-by-our-fallbacks` or
+  `task-class-unmapped`.
+- There is no `providerId` or `ok` field. Darwin-Route's observation loader therefore rejects the file if it is
+  ever passed as `--observations`.
+- The module refuses to write an evaluation record into the observation output, and the reverse.
+
+Both outputs are content-free: no query, prompt or response text is written.
+
+## Catalog
+
+The operator's own price table: the model each provider serves, as its Immaculate adapter is configured, and its
+per-1M-token prices.
+
+```json
+{"providers": [
+  {"providerId": "router-groq", "servedModel": "openai/gpt-oss-120b", "inputPer1M": 0.15, "outputPer1M": 0.75},
+  {"providerId": "router-cerebras", "servedModel": "gpt-oss-120b", "inputPer1M": 0.25, "outputPer1M": 0.69},
+  {"providerId": "router-huggingface", "servedModel": "openai/gpt-oss-120b:fastest", "inputPer1M": 0.10, "outputPer1M": 0.50},
+  {"providerId": "router-cloudflare", "servedModel": null, "inputPer1M": 0, "outputPer1M": 0}
+]}
+```
+
+- Model names are compared canonically: the last path segment, without a `:variant` suffix, lower-cased. So
+  `openai/gpt-oss-120b:fastest` is `gpt-oss-120b`.
+- These prices are illustrative. Use the operator's actual contract prices.
+
+## Running it (on the machine that holds the pinned files)
 
 ```bash
-pip install pandas pyarrow
-huggingface-cli download ulab-ai/xRouteBench --repo-type dataset --local-dir ~/data/xroutebench
-python -m arobi_integrations.route_evidence xroutebench \
-  --rows ~/data/xroutebench/llmrouter_generic/train.parquet \
-  --rows ~/data/xroutebench/llmrouter_generic/test.parquet \
-  --catalog provider_catalog.json --out benchmark-observations.jsonl
+D=D:/arobi-data/route-evidence
+python -m arobi_integrations.route_evidence eljefe-router-data \
+  --sources $D/MANIFEST-SOURCES.json --downloads $D/DOWNLOADS.json \
+  --file $D/<local copy of scored_gptoss120b.jsonl> --catalog provider_catalog.json \
+  --out eljefe-observations.jsonl --evaluation-out eljefe-evaluation.jsonl
+python -m arobi_integrations.route_evidence icl-router \
+  --sources $D/MANIFEST-SOURCES.json --downloads $D/DOWNLOADS.json \
+  --file $D/<local copy of train_router.json> --catalog provider_catalog.json \
+  --evaluation-out icl-evaluation.jsonl        # add --out only if a catalog provider serves one of its models
+python -m arobi_integrations.route_evidence dataset-a-routing \
+  --sources $D/MANIFEST-SOURCES.json --downloads $D/DOWNLOADS.json \
+  --file $D/<local copy of data/results/train.jsonl.gz> --evaluation-out dataset-a-evaluation.jsonl
 # then, in PossumXI/Immaculate:
-npm run darwin:route -- evolve --observations benchmark-observations.jsonl \
+npm run darwin:route -- evolve --observations eljefe-observations.jsonl \
   --outcomes-dir "$IMMACULATE_ROUTE_OUTCOMES_DIR" --out report.json
 ```
 
+A refusal prints `refused: …` on stderr, exits 2 and writes nothing. No third-party dependency is needed.
+
 ## Research notes (read from the Hugging Face Hub, 2026-09-27)
+
+These are findings from published papers. They inform the policy objective. The datasets behind the refused
+benchmarks are not used.
 
 ### Findings from large-scale routing benchmarks
 
 - **Models are complementary, and no single model dominates.** LLMRouterBench (arXiv:2601.07206) covers
-  400K+ instances, 21 datasets and 33 models, including GPT-5, Claude 4 and Gemini 2.5 Pro.
+  400K+ instances, 21 datasets and 33 models.
 - **Most routers are indistinguishable under unified evaluation.** Per LLMRouterBench, several recent
   methods, including OpenRouter's commercial router, do not reliably beat the *best single model*, and do
   not cut cost without losing performance relative to it. Treat the best single candidate as the bar to
@@ -106,44 +243,11 @@ npm run darwin:route -- evolve --observations benchmark-observations.jsonl \
   A cascade needs a second call. Here, the second entry in an order serves only when the first *fails*,
   so it is a fallback, not a cascade.
 
-### Datasets and what they measure
+### Refused datasets (no licence on the card)
 
-- **xRouteBench** (`ulab-ai/xRouteBench`, Aug 2026; parquet): the primary source.
-  - Every query was run against all 18 candidates, recording the response, task score (0–1), input and
-    output tokens, and latency.
-  - `llmrouter_generic` has 80,802 train rows (4,487 queries) and 67,122 test rows (3,729 queries) across
-    13 classic benchmarks (MMLU, GSM8K, MATH, MBPP, ARC, …) with metrics em_mc, GSM8K, MATH, code_eval and
-    f1.
-  - Cost per row = `input_tokens × input_price/1e6 + output_tokens × output_price/1e6`.
-  - The `*_queries` configs ship the raw queries, so new candidates (our providers) can be measured on the
-    same items.
-- **RouterBench** (`withmartian/routerbench`, arXiv:2403.12031): 30,000+ prompts from MBPP, GSM8K,
-  Winogrande, Hellaswag, MMLU, MT-Bench and more. Each response has a correctness score and an estimated
-  cost across 11 models (older generation: GPT-4, GPT-3.5, Claude v1/v2, Llama-2-70B, Mixtral, Yi-34B, …).
-  It comes as a pickled pandas frame, so check the sha256 before loading.
-- **LLMRouterBench** (`NPULH/LLMRouterBench`; results tarball `bench-release.tar.gz`, 1.28 GB): the 33-model,
-  21-dataset source used for the findings above.
-
-### xRouteBench candidate pool and published prices (USD per 1M tokens, input / output)
-
-| candidate | size | input | output | served via |
-|---|---|---|---|---|
-| qwen2.5-7b-instruct | 7B | 0.20 | 0.20 | NVIDIA |
-| gemma-2-9b-it | 9B | 0.10 | 0.10 | NVIDIA |
-| llama-3-8b-instruct-lite | 8B | 0.10 | 0.10 | Together |
-| qwen2.5-7b-instruct-turbo | 7B | 0.30 | 0.30 | Together |
-| mistral-7b-instruct-v0.3 | 7B | 0.20 | 0.20 | NVIDIA |
-| qwen3-next-80b-a3b-instruct | 80B (3B active) | 0.15 | 1.50 | Together |
-| llama3-70b-instruct | 70B | 0.90 | 0.90 | NVIDIA |
-| mixtral-8x7b-instruct-v0.1 | 46.7B | 0.60 | 0.60 | NVIDIA |
-| mixtral-8x22b-instruct-v0.1 | 140.6B | 1.20 | 1.20 | NVIDIA |
-| gpt-oss-20b | 20B | 0.05 | 0.20 | Together |
-| mistral-small-3-24b-instruct | 24B | 0.10 | 0.30 | Together |
-| llama-4-maverick | 402B | 0.27 | 0.85 | Together |
-| rnj-1-instruct | 15B | 0.15 | 0.15 | Together |
-| gpt-oss-120b | 120B | 0.15 | 0.60 | Together |
-| qwen3-coder-next | 200B | 0.50 | 1.20 | Together |
-| deepseek-v3.1 | 671B | 0.60 | 1.70 | Together |
-| llama-3.3-70b-instruct-turbo | 70B | 0.88 | 0.88 | Together |
-| cogito-v2-1-671b | 671B | 1.25 | 1.25 | Together |
-
+- **xRouteBench** (`ulab-ai/xRouteBench`, arXiv:2608.06867): 18 candidates, including gpt-oss-120b, with task
+  scores, tokens and latency per query.
+- **RouterBench** (`withmartian/routerbench`, arXiv:2403.12031): 30,000+ prompts across 11 older models, shipped
+  as a pandas pickle.
+- **LLMRouterBench** (`NPULH/LLMRouterBench`): the 33-model, 21-dataset results tarball behind the findings
+  above.
