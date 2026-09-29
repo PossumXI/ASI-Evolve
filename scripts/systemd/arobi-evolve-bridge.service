@@ -1,0 +1,23 @@
+[Unit]
+Description=Arobi ASI-Evolve guarded bridge (one pass)
+Documentation=file://%h/ASI-Evolve/docs/arobi-integration-operator-guide.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Point this at the ASI-Evolve checkout.
+WorkingDirectory=%h/ASI-Evolve
+# Keys and root overrides (IMMACULATE_API_KEY, ASI_DISPATCH_HMAC_SECRET,
+# AROBI_OPERATOR_ANALYTICS_TOKEN, AROBI_EVOLVE_ROOT_*, ...). Keep it mode 600.
+EnvironmentFile=-%h/.config/arobi-evolve/bridge.env
+ExecStart=/usr/bin/env python3 -m arobi_integrations autopilot --write-report --heal --notify --deliver --timeout 25 --post-heal-wait 180
+ExecStart=/usr/bin/env python3 -m arobi_integrations process
+TimeoutStartSec=12min
+# Recovery commands start the Q gateway or harness in the background; with the
+# default control-group kill mode they would be stopped when this pass ends.
+KillMode=process
+Nice=10
+
+[Install]
+WantedBy=default.target
