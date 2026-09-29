@@ -157,10 +157,15 @@ class ClassificationTests(unittest.TestCase):
     def test_model_names_are_compared_canonically(self):
         for served in ("openai/gpt-oss-120b", "gpt-oss-120b", "openai/gpt-oss-120b:fastest", "accounts/fireworks/models/gpt-oss-120b"):
             self.assertEqual(ev.canonical_model(served), "gpt-oss-120b")
-        for llama in ("Llama-3.1-8B-Instruct", "meta-llama/Meta-Llama-3.1-70B-Instruct", "llama3.1-8b", "Llama-3.3-70B", "meta-llama/anything"):
+        llamas = (
+            "Llama-3.1-8B-Instruct", "meta-llama/Meta-Llama-3.1-70B-Instruct", "llama3.1-8b", "llama3.1:8b", "Llama-3.3-70B",
+            "meta-llama/anything", "CodeLlama-7b-Instruct-hf", "Llama-Guard-3-8B", "DeepSeek-R1-Distill-Llama-8B",
+            "nvidia/Llama-3.1-Nemotron-70B-Instruct",
+        )
+        for llama in llamas:
             with self.subTest(model=llama):
                 self.assertTrue(ev.is_meta_llama(llama))
-        for other in ("Qwen2.5-7B-Instruct", "gpt-oss-120b", "TinyLlama-1.1B", "gemma-4-E4B-it"):
+        for other in ("Qwen2.5-7B-Instruct", "gpt-oss-120b", "TinyLlama-1.1B", "gemma-4-E4B-it", "Mistral-7B-Instruct-v0.3", "", None):
             with self.subTest(model=other):
                 self.assertFalse(ev.is_meta_llama(other))
 
@@ -217,14 +222,57 @@ class LicenceGateTests(unittest.TestCase):
             ev.check_licence(entry("cc-by-nc-4.0", {"path": "LICENSE", "spdx": "CC-BY-NC-4.0"}))
         self.assertIn("permissive licence", str(caught.exception))
 
+    def test_several_repo_licence_files_must_all_be_allowed_and_agree(self):
+        agree = {"card": "apache-2.0", "repoFiles": [{"path": "LICENSE", "spdx": "Apache-2.0"}, {"path": "data/LICENSE.txt", "spdx": "apache-2.0"}]}
+        self.assertEqual([f["path"] for f in ev.check_licence({"repo": "someone/dataset", "license": agree})["repoFiles"]],
+                         ["LICENSE", "data/LICENSE.txt"])
+        both = {"card": "mit", "repoFile": {"path": "LICENSE", "spdx": "MIT"}, "repoFiles": [{"path": "COPYING", "spdx": "MIT"}]}
+        self.assertEqual(len(ev.check_licence({"repo": "someone/dataset", "license": both})["repoFiles"]), 2)
+        refused = {
+            "one file disagrees": {"card": "mit", "repoFiles": [{"path": "LICENSE", "spdx": "MIT"}, {"path": "data/LICENSE", "spdx": "GPL-3.0-only"}]},
+            "repoFiles not a list": {"card": "mit", "repoFiles": {"path": "LICENSE", "spdx": "MIT"}},
+            "empty repoFiles": {"card": "mit", "repoFiles": []},
+            "a file without a path": {"card": "mit", "repoFiles": [{"spdx": "MIT"}]},
+            "README.rst is the card": {"card": "mit", "repoFile": {"path": "README.rst", "spdx": "MIT"}},
+            "nested README is the card": {"card": "mit", "repoFile": {"path": "docs/README.md", "spdx": "MIT"}},
+            "dataset_card.md is the card": {"card": "mit", "repoFile": {"path": "dataset_card.md", "spdx": "MIT"}},
+            "licence file sha256 not hex": {"card": "mit", "repoFile": {"path": "LICENSE", "spdx": "MIT", "sha256": "abc"}},
+        }
+        for name, licence in refused.items():
+            with self.subTest(case=name), self.assertRaises(ev.LicenceError):
+                ev.check_licence({"repo": "someone/dataset", "license": licence})
+
+    def test_licence_may_be_spelled_either_way_but_not_recorded_twice_differently(self):
+        evidence = {"card": "cc-by-4.0", "repoFile": {"path": "LICENSE", "spdx": "CC-BY-4.0"}}
+        self.assertEqual(ev.check_licence({"repo": "someone/dataset", "licence": evidence})["spdx"], "CC-BY-4.0")
+        self.assertEqual(ev.check_licence({"repo": "someone/dataset", "license": evidence, "licence": evidence})["spdx"], "CC-BY-4.0")
+        with self.assertRaises(ev.LicenceError):
+            ev.check_licence({"repo": "someone/dataset", "license": evidence,
+                              "licence": {"card": "cc-by-nc-4.0", "repoFile": {"path": "LICENSE", "spdx": "CC-BY-NC-4.0"}}})
+
     def test_unlicensed_benchmarks_are_refused_even_when_a_manifest_claims_a_licence(self):
         for command, (name, repo) in ev.UNLICENSED_SOURCES.items():
-            with self.subTest(source=name):
-                claim = {"repo": repo.upper(), "license": {"card": "mit", "repoFile": {"path": "LICENSE", "spdx": "MIT"}}}
-                with self.assertRaises(ev.LicenceError) as caught:
-                    ev.check_licence(claim)
-                self.assertIn("declares no licence", str(caught.exception))
-                self.assertIn("permissive licence", str(caught.exception))
+            owner, dataset = repo.split("/")
+            spellings = (
+                repo.upper(), f"datasets/{repo}", f"hf://datasets/{repo}", f"https://huggingface.co/datasets/{repo}/",
+                f"https://github.com/{owner}/{dataset}.git", f"  {owner.lower()}/{dataset.lower()}  ",
+            )
+            for spelling in spellings:
+                with self.subTest(source=name, repo=spelling):
+                    claim = {"repo": spelling, "license": {"card": "mit", "repoFile": {"path": "LICENSE", "spdx": "MIT"}}}
+                    with self.assertRaises(ev.LicenceError) as caught:
+                        ev.check_licence(claim)
+                    self.assertIn("declares no licence", str(caught.exception))
+                    self.assertIn("permissive licence", str(caught.exception))
+
+    def test_repository_references_normalise_only_known_prefixes(self):
+        for spelling in ("DJLougen/eljefe-router-data", "datasets/DJLougen/eljefe-router-data",
+                         "hf://datasets/DJLougen/eljefe-router-data", "https://huggingface.co/datasets/DJLougen/eljefe-router-data"):
+            with self.subTest(repo=spelling):
+                self.assertEqual(ev.normalise_repo(spelling), "djlougen/eljefe-router-data")
+        self.assertEqual(ev.normalise_repo("https://github.com/lalalamdbf/ICL-Router.git"), "lalalamdbf/icl-router")
+        self.assertNotEqual(ev.normalise_repo("https://mirror.example/DJLougen/eljefe-router-data"), "djlougen/eljefe-router-data",
+                            "an unknown host is not the Hub or GitHub")
 
     def test_unlicensed_benchmark_commands_refuse_without_reading_anything(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -236,6 +284,9 @@ class LicenceGateTests(unittest.TestCase):
                 "routerbench": ["--pickle", str(pickle_path), "--expect-sha256", hashlib.sha256(pickle_path.read_bytes()).hexdigest(),
                                 "--catalog", "c.json", "--out", str(directory / "o.jsonl")],
                 "llmrouterbench": ["--tarball", str(directory / "bench-release.tar.gz")],
+                "xRouteBench": ["--out", str(directory / "o.jsonl")],
+                "router_bench": ["--out", str(directory / "o.jsonl")],
+                "LLM-Router-Bench": ["--out", str(directory / "o.jsonl")],
             }
             for command, rest in invocations.items():
                 with self.subTest(command=command):
@@ -269,8 +320,10 @@ class PinningTests(unittest.TestCase):
             self.assertEqual(provenance["sha256"], hashlib.sha256(payload).hexdigest())
             self.assertEqual(provenance["commit"], full_commit(ev.ELJEFE))
             self.assertEqual(provenance["licence"]["spdx"], "Apache-2.0")
-            self.assertEqual(provenance["licence"]["repoFile"], {"path": "LICENSE", "spdx": "Apache-2.0"})
+            self.assertEqual(provenance["licence"]["repoFiles"], [{"path": "LICENSE", "spdx": "Apache-2.0"}])
             self.assertIn("Apache-2.0", provenance["attribution"])
+            self.assertEqual(provenance["licence_url"], "https://spdx.org/licenses/Apache-2.0.html")
+            self.assertIn("content-free", provenance["changes"], "the manifest says how the material was changed")
 
     def test_sha256_mismatch_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -294,6 +347,37 @@ class PinningTests(unittest.TestCase):
                 with self.assertRaises(ev.PinError):
                     self.verify(Path(tmp), ev.ELJEFE, payload, **kwargs)
 
+    def test_commits_agree_by_prefix_and_may_be_recorded_as_revision(self):
+        payload = jsonl([eljefe_row(1, "mbpp")])
+        short = ev.ELJEFE.commit[:7]
+        accepted = {
+            "7-hex short commit in the source manifest": {"source": source_entry(ev.ELJEFE, commit=short)},
+            "revision instead of commit": {"source": {k: v for k, v in source_entry(ev.ELJEFE).items() if k != "commit"} | {"revision": full_commit(ev.ELJEFE)}},
+            "commit and revision both recorded, agreeing": {"source": source_entry(ev.ELJEFE, revision=full_commit(ev.ELJEFE))},
+            "repository written as a Hub URL in both manifests": {
+                "source": source_entry(ev.ELJEFE, repo=f"https://huggingface.co/datasets/{ev.ELJEFE.repo}"),
+                "download": {"repo": f"datasets/{ev.ELJEFE.repo}"},
+            },
+        }
+        for name, kwargs in accepted.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                self.assertEqual(self.verify(Path(tmp), ev.ELJEFE, payload, **kwargs)["sha256"], hashlib.sha256(payload).hexdigest())
+        with tempfile.TemporaryDirectory() as tmp:
+            provenance = self.verify(Path(tmp), ev.ELJEFE, payload, source=source_entry(ev.ELJEFE, commit=short), download={"commit": short})
+            self.assertEqual(provenance["commit"], ev.ELJEFE.commit, "the longest agreeing id is recorded")
+        refused = {
+            "commit and revision disagree": {"source": source_entry(ev.ELJEFE, revision="deadbeef" + "0" * 32)},
+            "6-hex commit is too short to pin": {"source": source_entry(ev.ELJEFE, commit=ev.ELJEFE.commit[:6])},
+            "download agrees with a short manifest commit but not with the adapter's revision": {
+                "source": source_entry(ev.ELJEFE, commit=short),
+                "download": {"commit": short + "0" + "0" * 32},
+            },
+        }
+        for name, kwargs in refused.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(ev.PinError):
+                    self.verify(Path(tmp), ev.ELJEFE, payload, **kwargs)
+
     def test_missing_or_duplicate_manifest_entries_are_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
@@ -301,6 +385,8 @@ class PinningTests(unittest.TestCase):
                 self.verify(directory, ev.ELJEFE, b"{}\n", source=source_entry(ev.ICL_ROUTER))
             with self.assertRaises(ev.PinError):
                 self.verify(directory, ev.ELJEFE, b"{}\n", extra_sources=[source_entry(ev.ELJEFE)])
+            with self.assertRaises(ev.PinError, msg="the same repository spelled two ways is still two entries"):
+                self.verify(directory, ev.ELJEFE, b"{}\n", extra_sources=[source_entry(ev.ELJEFE, repo=f"hf://datasets/{ev.ELJEFE.repo}")])
 
     def test_manifests_may_be_bare_lists_or_one_combined_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -466,6 +552,17 @@ class DatasetATests(unittest.TestCase):
         self.assertEqual(evidence.dropped["row:upstream-copyright:livecodebench"], 2)
         self.assertEqual({record["item"] for record in evidence.evaluation}, {"q1", "q6", "q7"})
         self.assertEqual(evidence.counts["gated-rows"], 1)
+
+    def test_copyright_is_detected_in_any_identifying_field_never_the_query(self):
+        rows = [
+            dataset_a_row("aime2025_07", "competition_math", evaluation_protocol_id="exact_match"),
+            dataset_a_row("q10", "code", evaluation_protocol_id="unit_tests", dimension="lcb_v6"),
+            dataset_a_row("q11", "gsm8k", query="a question that mentions AIME and LiveCodeBench in its text"),
+        ]
+        evidence = ev.dataset_a_evidence(rows)
+        self.assertEqual(evidence.dropped["row:upstream-copyright:aime"], 1)
+        self.assertEqual(evidence.dropped["row:upstream-copyright:livecodebench"], 1)
+        self.assertEqual({record["item"] for record in evidence.evaluation}, {"q11"}, "the query text is never inspected")
 
     def test_every_arm_is_evaluation_only(self):
         evidence = ev.dataset_a_evidence(self.ROWS)

@@ -1,4 +1,4 @@
-"""Permissively licensed routing evidence for Immaculate's Darwin-Route, as content-free route observations.
+r"""Permissively licensed routing evidence for Immaculate's Darwin-Route, as content-free route observations.
 
     python -m arobi_integrations.route_evidence eljefe-router-data --sources MANIFEST-SOURCES.json \
         --downloads DOWNLOADS.json --file scored_gptoss120b.jsonl --catalog provider_catalog.json \
@@ -18,14 +18,15 @@ module adds third-party evidence that exists before live traffic does. Feed its 
 
 Licence rule (owner decision, 2026-09-28). Third-party routing data is used only under a permissive licence, by
 SPDX id: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CC-BY-4.0, CC0-1.0 or Unlicense. The operator's source
-manifest must record the licence from BOTH the dataset card and a licence file in the repository (not the card
-itself); both must be on that list and they must agree. Anything else is refused. xRouteBench, RouterBench and
-LLMRouterBench declare no licence on their cards: their adapters are gone, their subcommands only print the
-refusal, and the gate refuses their repositories whatever a manifest claims.
+manifest must record the licence from BOTH the dataset card and one or more licence files in the repository (not
+the card itself); every one must be on that list and they must all agree. Anything else is refused. xRouteBench,
+RouterBench and LLMRouterBench declare no licence on their cards: their adapters are gone, their subcommands (under
+any spelling) only print the refusal, and the gate refuses their repositories, however the repository is written,
+whatever a manifest claims.
 
 Pinning. Nothing is fetched. The operator downloads each file and records, in a MANIFEST-SOURCES.json-style
 file, the repository, commit and licence evidence, and in a DOWNLOADS.json-style file, the repository, commit,
-file path and sha256 (optionally bytes and rows). A file is read only when its commit matches the revision the
+file path and sha256 (optionally bytes and rows). A file is read only when its commit agrees with the revision the
 adapter was written for and its sha256 matches the pin. ROUTE_EVIDENCE.md documents both shapes.
 
 Task classes. The owner's mapping onto Darwin-Route's classes (coding, research, reasoning, extraction,
@@ -50,9 +51,10 @@ Sources and their rules:
       dropped from all output.
   icl-router          lalalamdbf/ICL-Router@6f2aa6eb (Apache-2.0), train_router.json
       Llama rows are evaluation-only: the rule names Llama-3.1, whose licence carries a naming clause for
-      anything built from its outputs, and the gate covers every Meta Llama release. Any other row becomes an
-      observation only for catalog providers serving that exact model: quality = is_correct_direct, ok = true,
-      latencyMs and costUsd null (neither latency nor token counts are recorded).
+      anything built from its outputs, and the gate covers every model named as a Meta Llama release or
+      derivative (meta-llama/*, Llama-N, LlamaN, CodeLlama, Llama-Guard, *-Distill-Llama-*). Any other row
+      becomes an observation only for catalog providers serving that exact model: quality = is_correct_direct,
+      ok = true, latencyMs and costUsd null (neither latency nor token counts are recorded).
 
 Evaluation output (--evaluation-out) holds rows that must never be route observations for a serving provider.
 Every line says "use": "evaluation-only" with a reason and carries no providerId or ok field, so Darwin-Route's
@@ -112,8 +114,15 @@ REASON_LLAMA = "llama-licence-naming-clause"
 REASON_NOT_SERVED = "model-not-served-by-our-fallbacks"
 REASON_UNMAPPED = "task-class-unmapped"
 
+LICENCE_URLS = {licence: f"https://spdx.org/licenses/{licence}.html" for licence in PERMISSIVE_LICENCES}
+CHANGES_NOTICE = (
+    "projected to content-free route observations and evaluation records: no query, prompt or response text is "
+    "kept, rows listed under 'dropped' are removed, and task names are mapped onto Darwin-Route task classes"
+)
+
 _HEX = re.compile(r"^[0-9a-f]+$")
-_META_LLAMA = re.compile(r"(?<![a-z])llama[-_ ]?\d")
+_LLAMA_TOKEN = re.compile(r"^(?:code)?llama[0-9.]*$")
+_REPO_PREFIX = re.compile(r"^(?:[a-z][a-z0-9+.-]*://)?(?:www\.)?(?:huggingface\.co/|hf\.co/|github\.com/)?(?:datasets/|models/|spaces/)?")
 
 
 class EvidenceError(ValueError):
@@ -171,8 +180,15 @@ def canonical_model(name: object) -> str:
 
 
 def is_meta_llama(model: object) -> bool:
+    """True for a model named as a Meta Llama release or derivative. TinyLlama (not Meta's) is not one.
+
+    A false positive only moves a row to the evaluation output, so the test errs toward catching names:
+    any name segment that is llama, llamaN, codellama or codellamaN counts, as does the meta-llama/ org.
+    """
     lowered = str(model or "").strip().lower()
-    return lowered.startswith("meta-llama/") or bool(_META_LLAMA.search(lowered))
+    if lowered.startswith("meta-llama/"):
+        return True
+    return any(_LLAMA_TOKEN.match(token) for token in re.split(r"[^a-z0-9.]+", lowered) if token)
 
 
 class _TaskClasses:
@@ -201,6 +217,23 @@ def spdx_permissive(value: object) -> str | None:
     return None
 
 
+def normalise_repo(value: object) -> str:
+    """The lower-cased owner/name a repository reference names.
+
+    'DJLougen/eljefe-router-data', 'datasets/DJLougen/eljefe-router-data', 'hf://datasets/DJLougen/eljefe-router-data'
+    and 'https://huggingface.co/datasets/DJLougen/eljefe-router-data' are the same repository; so are
+    'lalalamdbf/ICL-Router' and 'https://github.com/lalalamdbf/ICL-Router.git'. Only those prefixes are removed.
+    """
+    text = _REPO_PREFIX.sub("", str(value or "").strip().replace("\\", "/").lower(), count=1).strip("/")
+    return text[:-4] if text.endswith(".git") else text
+
+
+def unlicensed_command(name: object) -> str | None:
+    """The refused command a name spells ('LLM-Router-Bench' is llmrouterbench), or None."""
+    key = normalise_task(name)
+    return key if key in UNLICENSED_SOURCES else None
+
+
 def unlicensed_refusal(command: str) -> str:
     name, repo = UNLICENSED_SOURCES[command]
     return (
@@ -209,36 +242,61 @@ def unlicensed_refusal(command: str) -> str:
     )
 
 
+def _single(entry: dict, names: tuple[str, ...], where: str, error: type[EvidenceError]) -> object:
+    """The one value recorded under any of these spellings (e.g. license/licence); refuse two that disagree."""
+    present = [(name, entry[name]) for name in names if entry.get(name) not in (None, "")]
+    if len({json.dumps(value, sort_keys=True, default=str) for _, value in present}) > 1:
+        raise error(f"{where}: {' and '.join(name for name, _ in present)} disagree; record one")
+    return present[0][1] if present else None
+
+
+def _is_card(path: str) -> bool:
+    name = re.split(r"[\\/]", path)[-1].lower()
+    return name.startswith("readme") or name in {"dataset_card.md", "datasetcard.md", "model_card.md", "modelcard.md"}
+
+
 def check_licence(entry: dict) -> dict:
-    """Refuse a source-manifest entry unless the card and a repository licence file name the same allowed licence."""
+    """Refuse a source-manifest entry unless the card and every recorded repository licence file name the same
+    allowed licence. Returns the verified evidence: {spdx, card, repoFiles: [{path, spdx, sha256?}]}."""
     repo = str(entry.get("repo", "")).strip()
     if not repo:
         raise LicenceError(f"a source manifest entry has no repo; {LICENCE_RULE}")
     for command, (_, blocked) in UNLICENSED_SOURCES.items():
-        if repo.lower() == blocked.lower():
+        if normalise_repo(repo) == normalise_repo(blocked):
             raise LicenceError(unlicensed_refusal(command))
-    licence = entry.get("license")
+    licence = _single(entry, ("license", "licence"), repo, LicenceError)
     if not isinstance(licence, dict):
         raise LicenceError(f"{repo}: the source manifest records no licence evidence (license.card, license.repoFile); {LICENCE_RULE}")
     card = licence.get("card")
     card_id = spdx_permissive(card)
     if card_id is None:
         raise LicenceError(f"{repo}: the card licence {card!r} is not an allowed SPDX id; {LICENCE_RULE}")
-    repo_file = licence.get("repoFile")
-    file_path = str(repo_file.get("path", "")).strip() if isinstance(repo_file, dict) else ""
-    if not file_path:
+    single, listed = licence.get("repoFile"), licence.get("repoFiles")
+    if listed is not None and not isinstance(listed, list):
+        raise LicenceError(f"{repo}: license.repoFiles must be a list of {{path, spdx}} objects; {LICENCE_RULE}")
+    repo_files = ([single] if single is not None else []) + list(listed or [])
+    if not repo_files:
         raise LicenceError(f"{repo}: no repository licence file is recorded (license.repoFile.path and .spdx); {LICENCE_RULE}")
-    if re.split(r"[\\/]", file_path)[-1].lower() in {"readme", "readme.md"}:
-        raise LicenceError(f"{repo}: {file_path} is the dataset card, not a separate licence file; {LICENCE_RULE}")
-    file_id = spdx_permissive(repo_file.get("spdx"))
-    if file_id is None:
-        raise LicenceError(f"{repo}: {file_path} records licence {repo_file.get('spdx')!r}, not an allowed SPDX id; {LICENCE_RULE}")
-    if file_id != card_id:
-        raise LicenceError(f"{repo}: the card says {card_id} but {file_path} says {file_id}; an ambiguous licence is refused")
-    evidence = {"path": file_path, "spdx": file_id}
-    if repo_file.get("sha256"):
-        evidence["sha256"] = str(repo_file["sha256"]).strip().lower()
-    return {"spdx": card_id, "card": str(card).strip(), "repoFile": evidence}
+    evidence = []
+    for repo_file in repo_files:
+        file_path = str(repo_file.get("path", "") or "").strip() if isinstance(repo_file, dict) else ""
+        if not file_path:
+            raise LicenceError(f"{repo}: a repository licence file has no path (license.repoFile.path and .spdx); {LICENCE_RULE}")
+        if _is_card(file_path):
+            raise LicenceError(f"{repo}: {file_path} is the dataset card, not a separate licence file; {LICENCE_RULE}")
+        file_id = spdx_permissive(repo_file.get("spdx"))
+        if file_id is None:
+            raise LicenceError(f"{repo}: {file_path} records licence {repo_file.get('spdx')!r}, not an allowed SPDX id; {LICENCE_RULE}")
+        if file_id != card_id:
+            raise LicenceError(f"{repo}: the card says {card_id} but {file_path} says {file_id}; an ambiguous licence is refused")
+        verified = {"path": file_path, "spdx": file_id}
+        if repo_file.get("sha256"):
+            digest = str(repo_file["sha256"]).strip().lower()
+            if len(digest) != 64 or not _HEX.match(digest):
+                raise LicenceError(f"{repo}: {file_path} records sha256 {repo_file['sha256']!r}, which is not 64 hex characters")
+            verified["sha256"] = digest
+        evidence.append(verified)
+    return {"spdx": card_id, "card": str(card).strip(), "repoFiles": evidence}
 
 
 # ----------------------------------------------------------------------------------------------------- pinning
@@ -274,7 +332,7 @@ def _repo_path(value: object) -> str:
 def _one(entries: list[dict], where: str, repo: str, path: str | None = None) -> dict:
     found = [
         entry for entry in entries
-        if str(entry.get("repo", "")).strip().lower() == repo.lower()
+        if normalise_repo(entry.get("repo")) == normalise_repo(repo)
         and (path is None or _repo_path(entry.get("path")) == path)
     ]
     what = repo if path is None else f"{repo} {path}"
@@ -285,11 +343,18 @@ def _one(entries: list[dict], where: str, repo: str, path: str | None = None) ->
     return found[0]
 
 
-def _commit(value: object, where: str) -> str:
+def _commit(entry: dict, where: str) -> str:
+    value = _single(entry, ("commit", "revision"), where, PinError)
     text = str(value or "").strip().lower()
     if not 7 <= len(text) <= 40 or not _HEX.match(text):
         raise PinError(f"{where}: {value!r} is not a commit id (7 to 40 hex characters)")
     return text
+
+
+def same_revision(first: str, second: str) -> bool:
+    """Two commit ids name the same revision when the shorter (at least 7 hex) is a prefix of the longer."""
+    shorter, longer = sorted((first.lower(), second.lower()), key=len)
+    return len(shorter) >= 7 and longer.startswith(shorter)
 
 
 def verify_source(spec: SourceSpec, sources: list[dict], downloads: list[dict], file_path: Path) -> dict:
@@ -301,12 +366,12 @@ def verify_source(spec: SourceSpec, sources: list[dict], downloads: list[dict], 
             f"{spec.repo}: the manifest records {licence['spdx']}, but this adapter was written for the "
             f"{spec.licence} release at {spec.commit}; re-verify the source before changing the adapter"
         )
-    commit = _commit(entry.get("commit"), f"{spec.repo} in the source manifest")
-    if not commit.startswith(spec.commit):
+    commit = _commit(entry, f"{spec.repo} in the source manifest")
+    if not same_revision(commit, spec.commit):
         raise PinError(f"{spec.repo}: the source manifest pins commit {commit}, but this adapter reads revision {spec.commit}")
     download = _one(downloads, "the downloads manifest", spec.repo, spec.path)
-    download_commit = _commit(download.get("commit"), f"{spec.repo} {spec.path} in the downloads manifest")
-    if not (download_commit.startswith(commit) or commit.startswith(download_commit)):
+    download_commit = _commit(download, f"{spec.repo} {spec.path} in the downloads manifest")
+    if not (same_revision(download_commit, commit) and same_revision(download_commit, spec.commit)):
         raise PinError(f"{spec.repo}: {spec.path} was downloaded at {download_commit}, not at the manifest's commit {commit}")
     expected = str(download.get("sha256", "")).strip().lower()
     if len(expected) != 64 or not _HEX.match(expected):
@@ -323,7 +388,7 @@ def verify_source(spec: SourceSpec, sources: list[dict], downloads: list[dict], 
     expected_rows = download.get("rows")
     if expected_rows is not None and (isinstance(expected_rows, bool) or not isinstance(expected_rows, int) or expected_rows < 0):
         raise PinError(f"{spec.repo} {spec.path}: the downloads manifest's rows must be a non-negative integer")
-    pinned_commit = max(commit, download_commit, key=len)
+    pinned_commit = max((commit, download_commit, spec.commit), key=len)
     return {
         "repo": spec.repo,
         "commit": pinned_commit,
@@ -332,7 +397,11 @@ def verify_source(spec: SourceSpec, sources: list[dict], downloads: list[dict], 
         "bytes": size,
         "expected_rows": expected_rows,
         "licence": licence,
-        "attribution": f"{spec.repo} at {pinned_commit}, licensed {licence['spdx']}",
+        # CC-BY-4.0 section 3(a) asks for credit, a licence notice and an indication of changes wherever the
+        # material is shared; every output manifest carries all three, for every source.
+        "attribution": f"{spec.repo} at {pinned_commit}, licensed {licence['spdx']} ({LICENCE_URLS[licence['spdx']]})",
+        "licence_url": LICENCE_URLS[licence["spdx"]],
+        "changes": CHANGES_NOTICE,
     }
 
 
@@ -522,9 +591,13 @@ def is_schema_anchor(row: dict) -> bool:
     )
 
 
+COPYRIGHT_FIELDS = ("source", "evaluation_protocol_id", "dimension", "query_id")
+
+
 def upstream_copyright(row: dict) -> str | None:
-    """'aime' or 'livecodebench' when the row comes from a source whose problems are under upstream copyright."""
-    for key in ("source", "evaluation_protocol_id"):
+    """'aime' or 'livecodebench' when any identifying field names a source whose problems are under upstream
+    copyright. A false positive only drops a row, so every identifying field is checked, never the query text."""
+    for key in COPYRIGHT_FIELDS:
         tokens = [token for token in re.split(r"[^a-z0-9]+", str(row.get(key) or "").lower()) if token]
         if any(token.startswith("aime") for token in tokens):
             return "aime"
@@ -538,7 +611,10 @@ def dataset_a_evidence(rows: list[dict], source: str = DATASET_A.label) -> Evide
     evidence = Evidence(rules={
         "evaluation": "every arm (qwen, ds4, kimi): none of our fallbacks serves these models",
         "quality": "the arm's *_correct flag as 0 or 1",
-        "dropped": "the _schema_anchor row, and AIME and LiveCodeBench rows (upstream copyright; the rule names AIME-2025 and every AIME year carries the same copyright)",
+        "dropped": (
+            "the _schema_anchor row, and AIME and LiveCodeBench rows named in source, evaluation_protocol_id, "
+            "dimension or query_id (upstream copyright; the rule names AIME-2025 and every AIME year carries the same copyright)"
+        ),
     })
     for row in rows:
         if is_schema_anchor(row):
@@ -711,8 +787,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0].strip().lower() in UNLICENSED_SOURCES:
-        print(f"refused: {unlicensed_refusal(argv[0].strip().lower())}", file=sys.stderr)
+    refused = unlicensed_command(argv[0]) if argv else None
+    if refused:
+        print(f"refused: {unlicensed_refusal(refused)}", file=sys.stderr)
         return 2
     args = build_parser().parse_args(argv)
     try:

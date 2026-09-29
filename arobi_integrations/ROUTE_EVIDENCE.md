@@ -28,21 +28,23 @@ Owner decision, 2026-09-28, recorded by knight-af on PossumXI/ASI-Evolve#1:
 
 - Third-party routing data may be used **only** under a permissive licence. The allowed SPDX ids are
   `MIT`, `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `CC-BY-4.0`, `CC0-1.0` and `Unlicense`.
-- The licence must be verified from **both** the dataset card and a licence file in the repository. The source
-  manifest records both. Both must be on the list, and they must agree. The repository file cannot be the card
-  itself (`README.md`).
+- The licence must be verified from **both** the dataset card and one or more licence files in the repository.
+  The source manifest records both. Every one must be on the list, and they must all agree. A repository file
+  cannot be the card itself (any `README*`, `dataset_card.md`, `model_card.md`).
 - The gate refuses a missing licence, a licence not on the list, an SPDX expression (`MIT OR …`), the ambiguous
-  Hub id `bsd`, a card and a licence file that disagree, and a licence other than the one the adapter was pinned
-  with.
+  Hub id `bsd`, a card and a licence file that disagree, two spellings of the licence field that disagree, and a
+  licence other than the one the adapter was pinned with.
 - Our own data is always allowed. That covers Immaculate's route-outcome sink and the observations written by
   `darwin:route measure` and `shadow`. It goes to Darwin-Route directly and never passes through this module.
 
 **Refused sources.** The live cards for `ulab-ai/xRouteBench`, `withmartian/routerbench` and
 `NPULH/LLMRouterBench` declare no licence.
 - Their adapters are removed.
-- The `xroutebench`, `routerbench` and `llmrouterbench` commands only print the refusal and exit 2. They do not
-  read any file (the RouterBench pickle is never opened).
-- The licence gate refuses those repositories even when a manifest claims a licence for them.
+- The `xroutebench`, `routerbench` and `llmrouterbench` commands, under any spelling (`xRouteBench`,
+  `router_bench`, `LLM-Router-Bench`), only print the refusal and exit 2. They do not read any file (the
+  RouterBench pickle is never opened).
+- The licence gate refuses those repositories even when a manifest claims a licence for them, however the
+  repository is written (`owner/name`, `datasets/owner/name`, `hf://datasets/…`, a Hub or GitHub URL).
 - Lifting the refusal takes a code change after the owner re-verifies both the card and the repository files.
 
 ## Pinning: the manifests the operator passes
@@ -59,13 +61,22 @@ The two manifests may be separate files or one file holding both lists. Either m
     "commit": "3239a7df…(7 to 40 hex; the full id is preferred)",
     "license": {
       "card": "apache-2.0",
-      "repoFile": {"path": "LICENSE", "spdx": "Apache-2.0", "sha256": "…optional…"}
+      "repoFile": {"path": "LICENSE", "spdx": "Apache-2.0", "sha256": "…optional, 64 hex…"}
     }
   }
 ]}
 ```
 
-`DOWNLOADS.json` holds one entry per downloaded file:
+- `repo` may be written as `owner/name`, `datasets/owner/name`, `hf://datasets/owner/name`, or a
+  `https://huggingface.co/…` or `https://github.com/…` URL. Those prefixes (and a trailing `.git`) are removed
+  before comparing, case-insensitively. Any other host does not match.
+- `commit` may be recorded as `revision` instead. If both are present they must be equal.
+- `license` may be spelled `licence`. If both are present they must be equal.
+- `license.repoFiles` (a list of the same `{path, spdx, sha256?}` objects) may replace or add to
+  `license.repoFile` when the repository carries more than one licence file. Every file must name the card's
+  licence.
+
+`DOWNLOADS.json` holds one entry per downloaded file (`repo`, `commit` and `revision` follow the same rules):
 
 ```json
 {"downloads": [
@@ -80,16 +91,23 @@ The two manifests may be separate files or one file holding both lists. Either m
 ]}
 ```
 
+`path` is the file's path inside the repository at that commit (for example `data/results/train.jsonl.gz`),
+not where it sits on the operator's disk. `--file` points at the local copy.
+
 A file is read only when all of the following hold:
 1. The repository passes the licence gate.
-2. The source commit starts with the revision the adapter was written for.
-3. The download entry's commit agrees with the source commit.
+2. The source commit agrees with the revision the adapter was written for.
+3. The download entry's commit agrees with both the source commit and the adapter's revision.
 4. The local file's sha256, and `bytes` when given, match the pin.
+
+Two commit ids agree when the shorter one, at least 7 hex characters long, is a prefix of the longer one. The
+longest agreeing id is recorded.
 
 `rows` is optional. When given, it is checked against the number of records in the file before any row is
 dropped. Each output manifest records the provenance:
 - the repository, commit, path, sha256 and licence evidence;
-- an attribution line (CC-BY-4.0 requires credit wherever the evidence is shared);
+- what CC-BY-4.0 asks for wherever the evidence is shared: an `attribution` line, a `licence_url` and a
+  `changes` notice saying how the material was changed (every source carries them);
 - the sha256 of both manifests and of the catalog.
 
 ## Sources and their rules
@@ -115,8 +133,13 @@ The `local_*` arm (gemma-4-E4B-it) goes to the evaluation output. So do gpt-oss-
 class. A row whose `frontier_score` is missing or outside 0–1 is dropped and counted.
 
 **icl-router.** Every Meta Llama row is evaluation-only (`llama-licence-naming-clause`). The rule names
-Llama-3.1, whose licence carries a naming clause for anything built from its outputs. The gate covers the whole
-Llama family, which carries the same obligations.
+Llama-3.1, whose licence carries a naming clause for anything built from its outputs. The gate covers every
+model named as a Llama release or derivative:
+- the `meta-llama/` organisation;
+- any name segment that is `llama`, `llamaN`, `codellama` or `codellamaN`. That covers `Llama-3.1-8B-Instruct`,
+  `llama3.1:8b`, `CodeLlama-7b`, `Llama-Guard-3-8B` and `DeepSeek-R1-Distill-Llama-8B`, but not `TinyLlama`.
+
+A false positive only moves a row to the evaluation output.
 - This holds even when a catalog provider serves that exact Llama model.
 - Any other row becomes an observation only for catalog providers whose `servedModel` is that exact model:
   - `quality` is `is_correct_direct` (0 or 1);
@@ -129,7 +152,9 @@ Llama family, which carries the same obligations.
 - Dropped from all output, with counts in the manifest:
   - the `_schema_anchor` row;
   - AIME and LiveCodeBench rows, because of upstream copyright. The rule names AIME-2025, and every AIME year
-    carries the same copyright.
+    carries the same copyright. A row is dropped when `source`, `evaluation_protocol_id`, `dimension` or
+    `query_id` names either one (for example `AIME-2025`, `aime2025_07`, `livecodebench_v6`, `lcb`). The query
+    text is never inspected.
 - Rows marked `gated` are kept (content-free) and counted.
 
 **Task classes.** The owner's mapping onto Darwin-Route's classes:
