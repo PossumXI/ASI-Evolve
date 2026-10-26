@@ -1,0 +1,29 @@
+# Arobi experiment configuration
+# ==============================
+# Routes every ASI-Evolve LLM call through the Immaculate Q gateway
+# (OpenAI-compatible /v1), so each call is governed by the Immaculate Route and
+# sealed into the LaaS decision ledger. Values come from the environment through
+# the ${VAR} resolver in utils/config.py:
+#
+#   IMMACULATE_Q_GATEWAY_BASE_URL  e.g. http://127.0.0.1:8897/v1
+#   IMMACULATE_Q_API_KEY           a Q API key issued by Immaculate
+#
+# An unset variable resolves to an empty string, and create_llm_client refuses
+# to start with an empty base_url, api_key or model.
+#
+# Running rounds also needs faiss-cpu and sentence-transformers (requirements.txt),
+# an input.md task description in this directory, and an evaluator:
+#   python main.py --experiment arobi --eval-script <path/to/eval.sh>
+
+experiment_name: "arobi"
+
+api:
+  provider: "openai"
+  base_url: "${IMMACULATE_Q_GATEWAY_BASE_URL}"
+  api_key: "${IMMACULATE_Q_API_KEY}"
+  model: "Q"
+
+logging:
+  wandb:
+    # Keep experiment telemetry on the governed path; no third-party upload.
+    enabled: false

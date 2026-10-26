@@ -10,6 +10,7 @@ from datetime import datetime
 
 from openai import OpenAI
 
+from .config import validate_api_config
 from .logger import get_logger
 from .structures import LLMResponse
 
@@ -288,6 +289,7 @@ class LLMClient:
 
 def create_llm_client(config: Dict[str, Any]) -> LLMClient:
     """Create an `LLMClient` from the top-level config dictionary."""
+    validate_api_config(config)
     api_config = config.get("api", {})
 
     framework_keys = {"provider", "base_url", "api_key", "model", "timeout", "retry_times", "retry_delay"}
